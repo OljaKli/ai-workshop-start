@@ -10,7 +10,7 @@ captions saying what happens. It needs no network and no `GITHUB_TOKEN`.
 
 ```console
 $ npx playwright install --with-deps chromium-headless-shell   # once
-$ npm run demo                                # every case → docs/demo/skill-atlas.webm
+$ npm run demo                                # every case → docs/demo/skill-atlas.webm and .gif
 $ npm run demo -- filter --out docs/demo/filter.webm           # some cases only
 ```
 
@@ -24,7 +24,13 @@ $ npm run demo -- filter --out docs/demo/filter.webm           # some cases only
   - `organization`: paste `github.com/JetBrains`, select koog, android, MPS;
     filter MPS's skills.
 - [record.ts](record.ts): starts the web server on a free port, records the
-  cases at 1280×720 with Playwright's `recordVideo`, saves the `.webm`.
+  cases at 1280×720 with Playwright's `recordVideo`, saves the `.webm`, then
+  the `.gif` beside it.
+- [gif.ts](gif.ts): the `.webm` as an 800-pixel-wide GIF at 6 frames a second
+  (`node .agents/skills/demo-video/gif.ts [<video.webm> [<out.gif>]]`):
+  Chromium decodes the frames, `gifenc` encodes them, and unchanged frames only
+  lengthen the one before. A pull request shows a GIF inline from the
+  repository; a video it only offers to download.
 
 ## Steps
 
@@ -38,10 +44,18 @@ $ npm run demo -- filter --out docs/demo/filter.webm           # some cases only
 3. `npm run demo` (or the cases of the change and `--out`). Look at a few frames
    before committing it, e.g.
    `~/.cache/ms-playwright/ffmpeg-*/ffmpeg-linux -ss 10 -i docs/demo/skill-atlas.webm -frames:v 1 /tmp/frame.png`.
-4. Commit the video under `docs/demo/` and link it in the pull request
-   description: `https://github.com/<owner>/<repo>/blob/<branch>/docs/demo/<file>.webm`.
-   GitHub plays videos only when uploaded through its web editor; say so if
-   the reviewer should drag it in.
+4. Commit both under `docs/demo/`. In the pull request description, show the
+   GIF and link the full video, at the pushed commit, so the links outlive the
+   branch:
+
+   ```markdown
+   ![Demo](https://github.com/<owner>/<repo>/blob/<commit>/docs/demo/<file>.gif?raw=true)
+
+   Full video: [<file>.webm](https://github.com/<owner>/<repo>/blob/<commit>/docs/demo/<file>.webm)
+   ```
+
+   GitHub plays a video inline only when it is uploaded through its web
+   editor; neither `gh` nor the API can do that.
 
 If Chromium fails with `error while loading shared libraries`, run
 `npx playwright install-deps chromium-headless-shell` (it needs `sudo`).
