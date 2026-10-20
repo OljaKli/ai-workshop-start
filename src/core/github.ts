@@ -1,4 +1,5 @@
 import { AtlasError } from './errors.ts';
+import { SKILL_ROOTS } from './find.ts';
 import type { Source } from './scan.ts';
 
 /** The part of `fetch` the core uses, so tests and the browser can pass their own. */
@@ -12,6 +13,7 @@ export type GitHubOptions = {
 
 const API = 'https://api.github.com';
 const RAW = 'https://raw.githubusercontent.com';
+const PRODUCT_ROOTS = ['plugins/mcp-tools/resources'];
 
 /** `https://github.com/owner/repo`, with or without the scheme, a trailing slash or `.git`. */
 export function parseGitHubUrl(input: string): { owner: string; repo: string } | undefined {
@@ -31,7 +33,7 @@ export async function openGitHub(input: string, options: GitHubOptions): Promise
   const id = info.full_name;
   const { sha } = await github.json<{ sha: string }>(`${API}/repos/${id}/commits/${encodePath(info.default_branch)}`);
   const warnings: string[] = [];
-  const paths = options.token ? await searchPaths(github, id) : await treePaths(github, id, sha);
+  const paths = options.token ? await searchPaths(github, id, warnings) : await treePaths(github, id, sha, warnings);
   const [organization, repo] = id.split('/');
   return {
     repository: { id, organization, name: repo, url: `https://github.com/${id}`, commit: sha },
@@ -42,13 +44,14 @@ export async function openGitHub(input: string, options: GitHubOptions): Promise
 }
 
 /** Code search looks at the whole default branch, 100 results a page. */
-async function searchPaths(github: Client, id: string): Promise<string[]> {
+async function searchPaths(github: Client, id: string, warnings: string[]): Promise<string[]> {
   const paths = new Set<string>(); // pages can repeat a result
   // GitHub returns at most 1000 results: ten pages.
   for (let page = 1; page <= 10; page++) {
     const result = await github.json<{ total_count: number; items: { path: string }[] }>(
       `${API}/search/code?q=filename:SKILL.md+repo:${id}&per_page=100&page=${page}`,
     );
+    if (page === 1 && result.total_count > 1000) warnings.push('GitHub code search found over 1,000 files; only the first 1,000 were scanned');
     for (const item of result.items) paths.add(item.path);
     if (result.items.length < 100 || page * 100 >= result.total_count) break;
   }
@@ -57,8 +60,35 @@ async function searchPaths(github: Client, id: string): Promise<string[]> {
 
 type Tree = { truncated: boolean; tree: { path: string; mode: string; type: string; sha: string }[] };
 
-/** The whole tree at once; truncated trees are completed one subtree at a time. */
-async function treePaths(github: Client, id: string, sha: string, prefix = ''): Promise<string[]> {
+/** The whole tree at once, or the known project-skill roots when it is truncated. */
+async function treePaths(github: Client, id: string, sha: string, warnings: string[]): Promise<string[]> {
+  const tree = await github.json<Tree>(`${API}/repos/${id}/git/trees/${sha}?recursive=1`);
+  if (!tree.truncated) return files(tree);
+  const roots = [...SKILL_ROOTS, ...PRODUCT_ROOTS];
+  warnings.push(`the tree is too large to list at once; looked only in ${roots.join(', ')} (GITHUB_TOKEN searches everywhere)`);
+  const paths = await Promise.all(
+    roots.map(async (root) => {
+      const rootSha = await directory(github, id, sha, root);
+      return rootSha ? (await completeTree(github, id, rootSha)).map((path) => `${root}/${path}`) : [];
+    }),
+  );
+  return paths.flat();
+}
+
+/** Walks down one level at a time; the directory's tree, or undefined if it does not exist. */
+async function directory(github: Client, id: string, sha: string, path: string): Promise<string | undefined> {
+  let current = sha;
+  for (const segment of path.split('/')) {
+    const tree = await github.json<Tree>(`${API}/repos/${id}/git/trees/${current}`);
+    const entry = tree.tree.find((item) => item.path === segment && item.type === 'tree');
+    if (!entry) return undefined;
+    current = entry.sha;
+  }
+  return current;
+}
+
+/** Completes a known root even if that root is itself too large for one recursive answer. */
+async function completeTree(github: Client, id: string, sha: string, prefix = ''): Promise<string[]> {
   const tree = await github.json<Tree>(`${API}/repos/${id}/git/trees/${sha}?recursive=1`);
   if (!tree.truncated) return files(tree).map((path) => `${prefix}${path}`);
   const direct = await github.json<Tree>(`${API}/repos/${id}/git/trees/${sha}`);
@@ -66,7 +96,7 @@ async function treePaths(github: Client, id: string, sha: string, prefix = ''): 
     direct.tree.map((entry) => {
       const path = `${prefix}${entry.path}`;
       if (entry.type === 'blob') return entry.mode === '120000' ? [] : [path];
-      return entry.type === 'tree' ? treePaths(github, id, entry.sha, `${path}/`) : [];
+      return entry.type === 'tree' ? completeTree(github, id, entry.sha, `${path}/`) : [];
     }),
   );
   return paths.flat();

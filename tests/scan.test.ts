@@ -99,14 +99,22 @@ test('a tokenless truncated GitHub tree still finds product resource skills', as
       status: 200,
       body: { truncated: false, tree: [{ path: 'plugins', mode: '040000', type: 'tree', sha: 'plugins-tree' }] },
     },
-    'https://api.github.com/repos/JetBrains/truncated/git/trees/plugins-tree?recursive=1': {
+    'https://api.github.com/repos/JetBrains/truncated/git/trees/plugins-tree': {
+      status: 200,
+      body: { truncated: false, tree: [{ path: 'mcp-tools', mode: '040000', type: 'tree', sha: 'mcp-tools-tree' }] },
+    },
+    'https://api.github.com/repos/JetBrains/truncated/git/trees/mcp-tools-tree': {
+      status: 200,
+      body: { truncated: false, tree: [{ path: 'resources', mode: '040000', type: 'tree', sha: 'resources-tree' }] },
+    },
+    'https://api.github.com/repos/JetBrains/truncated/git/trees/resources-tree?recursive=1': {
       status: 200,
       body: {
         truncated: false,
-        tree: [{ path: 'resources/skills/product/SKILL.md', mode: '100644', type: 'blob', sha: 'skill-blob' }],
+        tree: [{ path: 'skills/product/SKILL.md', mode: '100644', type: 'blob', sha: 'skill-blob' }],
       },
     },
-    [`https://raw.githubusercontent.com/JetBrains/truncated/${commit}/plugins/resources/skills/product/SKILL.md`]: {
+    [`https://raw.githubusercontent.com/JetBrains/truncated/${commit}/plugins/mcp-tools/resources/skills/product/SKILL.md`]: {
       status: 200,
       body: '---\nname: product\ndescription: A skill shipped with the product.\n---\n',
     },
@@ -114,8 +122,27 @@ test('a tokenless truncated GitHub tree still finds product resource skills', as
 
   const result = await scan(await openGitHub('https://github.com/JetBrains/truncated', { fetch: github }));
   assert.deepEqual(result.skills.map(({ name, path }) => ({ name, path })), [
-    { name: 'product', path: 'plugins/resources/skills/product/SKILL.md' },
+    { name: 'product', path: 'plugins/mcp-tools/resources/skills/product/SKILL.md' },
   ]);
+  assert.match(result.warnings[0], /looked only in .*plugins\/mcp-tools\/resources/);
+});
+
+test('GitHub code search warns when more than 1,000 files match', async () => {
+  const commit = '2222222222222222222222222222222222222222';
+  const github = replay({
+    'https://api.github.com/repos/JetBrains/capped': {
+      status: 200,
+      body: { full_name: 'JetBrains/capped', default_branch: 'main' },
+    },
+    'https://api.github.com/repos/JetBrains/capped/commits/main': { status: 200, body: { sha: commit } },
+    'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/capped&per_page=100&page=1': {
+      status: 200,
+      body: { total_count: 1001, items: [] },
+    },
+  });
+
+  const source = await openGitHub('https://github.com/JetBrains/capped', { fetch: github, token: 'test' });
+  assert.deepEqual(source.warnings, ['GitHub code search found over 1,000 files; only the first 1,000 were scanned']);
 });
 
 test('the CLI prints the result at once and stores nothing', (t) => {
