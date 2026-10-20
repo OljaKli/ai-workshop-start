@@ -23,7 +23,9 @@ the filter and an organization: [docs/demo/skill-atlas.webm](docs/demo/skill-atl
 
 Set `GITHUB_TOKEN` for a higher GitHub rate limit. `npm test` runs the offline
 tests; `npm run test:browser` drives the web page in headless Chromium (once:
-`npx playwright install chromium-headless-shell`); `GITHUB_TOKEN=… npm run test:e2e` compares fixed-commit scans of three
+`npx playwright install chromium-headless-shell`); `npm run e2e` plays the demo as screenshot tests, pixel by pixel against the baselines in
+[spec/screenshots](spec/screenshots/) (made on Linux; `npm run e2e:linux` anywhere);
+`GITHUB_TOKEN=… npm run test:e2e` compares fixed-commit scans of three
 real JetBrains repositories with checked-in snapshots.
 
 - [spec/](spec/): what it does. [AGENTS.md](AGENTS.md): the definition of done.

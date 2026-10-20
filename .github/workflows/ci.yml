@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: the screenshot baselines are made on Ubuntu 24.04 (spec/screenshots).
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -24,6 +25,21 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium-headless-shell
       - run: npm run test:browser
+      # The demo as screenshot tests: a changed pixel fails; every test is recorded on video.
+      - run: npm run e2e
+      - name: Changed screenshots
+        if: failure()
+        run: npm run -s screenshots -- summary >> "$GITHUB_STEP_SUMMARY"
+      - name: Videos, and expected / actual / diff of each changed screenshot
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
       - run: npm run test:e2e
         env:
           GITHUB_TOKEN: ${{ github.token }}
