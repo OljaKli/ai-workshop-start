@@ -1,6 +1,7 @@
 # Repository analysis
 ## Input
-A **GitHub repository** URL, or a local directory
+A **GitHub repository** URL, optionally pinned as `/tree/<40-character commit>`,
+or a local directory
 ## Output
 Every project skill: **name**, **description**, **link**
 ## Architecture
@@ -23,5 +24,11 @@ the other paths are copies.
 - GitHub code search warns when its 1,000-result limit makes discovery incomplete
 - The name: front matter, else the directory
 - The link pins the *scanned commit*
+- A commit-pinned input scans exactly that commit
 - Malformed front matter → a *warning*, the scan goes on
 - Unreachable repository → a clear message, exit code 1
+
+## End-to-end proof
+The real CLI scans fixed commits of `JetBrains/MPS`, `JetBrains/android`, and
+`JetBrains/koog`. Their stdout is compared byte-for-byte with checked-in text
+snapshots; scoped-tree warnings are checked on stderr.

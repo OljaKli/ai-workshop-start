@@ -15,10 +15,12 @@ const API = 'https://api.github.com';
 const RAW = 'https://raw.githubusercontent.com';
 const PRODUCT_ROOTS = ['plugins/mcp-tools/resources'];
 
-/** `https://github.com/owner/repo`, with or without the scheme, a trailing slash or `.git`. */
-export function parseGitHubUrl(input: string): { owner: string; repo: string } | undefined {
-  const match = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i.exec(input.trim());
-  return match ? { owner: match[1], repo: match[2] } : undefined;
+/** A GitHub repository, optionally pinned with `/tree/<40-character commit>`. */
+export function parseGitHubUrl(input: string): { owner: string; repo: string; commit?: string } | undefined {
+  const match = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/tree\/([0-9a-f]{40}))?\/?$/i.exec(
+    input.trim(),
+  );
+  return match ? { owner: match[1], repo: match[2], commit: match[3] } : undefined;
 }
 
 /** Resolves the default branch to a commit and lists the files that may be skills. */
@@ -31,9 +33,10 @@ export async function openGitHub(input: string, options: GitHubOptions): Promise
     `Repository not found: https://github.com/${name.owner}/${name.repo}`,
   );
   const id = info.full_name;
-  const { sha } = await github.json<{ sha: string }>(`${API}/repos/${id}/commits/${encodePath(info.default_branch)}`);
+  const { sha } = await github.json<{ sha: string }>(`${API}/repos/${id}/commits/${encodePath(name.commit ?? info.default_branch)}`);
   const warnings: string[] = [];
-  const paths = options.token ? await searchPaths(github, id, warnings) : await treePaths(github, id, sha, warnings);
+  // Code search only sees the default branch, so a pinned commit always uses its tree.
+  const paths = options.token && !name.commit ? await searchPaths(github, id, warnings) : await treePaths(github, id, sha, warnings);
   const [organization, repo] = id.split('/');
   return {
     repository: { id, organization, name: repo, url: `https://github.com/${id}`, commit: sha },

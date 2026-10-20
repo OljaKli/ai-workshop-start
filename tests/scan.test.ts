@@ -38,6 +38,24 @@ test('scan prints the repository, then each skill with its first sentence and pi
   );
 });
 
+test('a /tree/<commit> URL scans exactly that commit', async () => {
+  const commit = '3333333333333333333333333333333333333333';
+  const github = replay({
+    'https://api.github.com/repos/JetBrains/pinned': {
+      status: 200,
+      body: { full_name: 'JetBrains/pinned', default_branch: 'main' },
+    },
+    [`https://api.github.com/repos/JetBrains/pinned/commits/${commit}`]: { status: 200, body: { sha: commit } },
+    [`https://api.github.com/repos/JetBrains/pinned/git/trees/${commit}?recursive=1`]: {
+      status: 200,
+      body: { truncated: false, tree: [] },
+    },
+  });
+
+  const source = await openGitHub(`github.com/JetBrains/pinned/tree/${commit}`, { fetch: github, token: 'test' });
+  assert.equal(source.repository.commit, commit);
+});
+
 test('./fixture: project skills include copies, unusual folders and product resources, but not test data', () => {
   const root = pathToFileURL(FIXTURE).href;
   assert.equal(fixture.code, 0);
