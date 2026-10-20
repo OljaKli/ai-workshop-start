@@ -11,6 +11,8 @@ export type Source = {
   warnings: string[];
   /** The file's bytes, or undefined if it is not there. */
   read(path: string): Promise<Uint8Array | undefined>;
+  /** When the file last changed, as of the scanned commit: an ISO date; GitHub with a token only. */
+  updated?(path: string): Promise<string | undefined>;
 };
 
 export type ScanResult = { repository: Repository; skills: Skill[]; warnings: string[] };

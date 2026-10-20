@@ -10,7 +10,7 @@ import { createInterface } from 'node:readline';
 import { after, test } from 'node:test';
 import { replay, type Recording } from '../src/core/replay.ts';
 import { createWebServer, type OrganizationAnswer, type ScanAnswer } from '../src/server.ts';
-import { CLI, EXAMPLE_COMMIT, FIXTURE, github } from './helpers.ts';
+import { CLI, EXAMPLE_COMMIT, EXAMPLE_UPDATED, FIXTURE, github } from './helpers.ts';
 
 const server = createWebServer({ fetch: github, token: 'test' });
 await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -19,9 +19,9 @@ const base = `http://localhost:${(server.address() as AddressInfo).port}`;
 
 const scanUrl = (url: string) => fetch(`${base}/api/scan?url=${encodeURIComponent(url)}`);
 
-/** The API's answer for a URL, with GitHub answering from a recording instead. */
-async function scanRecorded(recording: Recording, url: string): Promise<ScanAnswer> {
-  const other = createWebServer({ fetch: replay(recording) });
+/** The API's answer for a URL, with GitHub answering from a recording instead; no token unless given. */
+async function scanRecorded(recording: Recording, url: string, token?: string): Promise<ScanAnswer> {
+  const other = createWebServer({ fetch: replay(recording), token });
   await new Promise<void>((resolve) => other.listen(0, resolve));
   try {
     const port = (other.address() as AddressInfo).port;
@@ -63,6 +63,7 @@ test('the API answers the repository and each skill with its full description an
         path: '.claude/skills/commits/SKILL.md',
         link: `https://github.com/JetBrains/example/blob/${EXAMPLE_COMMIT}/.claude/skills/commits/SKILL.md`,
         copies: [],
+        updated: EXAMPLE_UPDATED,
       },
     ],
     warnings: [],
@@ -93,6 +94,39 @@ test('copies and warnings reach the page, skills sorted by name', async () => {
     ],
   );
   assert.deepEqual(answer.warnings, ['docs/broken/SKILL.md: no front matter; using the directory name']);
+  // Without a token, no dates: nothing asked, nothing warned.
+  assert.deepEqual(answer.skills.map((skill) => skill.updated), [null, null]);
+});
+
+test('with a token, each skill answers when it last changed; a lookup GitHub cannot answer is null and one warning', async () => {
+  const commit = '7777777777777777777777777777777777777777';
+  const raw = `https://raw.githubusercontent.com/JetBrains/dated/${commit}`;
+  const commits = (path: string) => `https://api.github.com/repos/JetBrains/dated/commits?path=${path}&sha=${commit}&per_page=1`;
+  const search = 'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/dated&per_page=100&page=1';
+  const paths = ['a/SKILL.md', 'b/SKILL.md', 'c/SKILL.md'];
+  const answer = await scanRecorded(
+    {
+      'https://api.github.com/repos/JetBrains/dated': { status: 200, body: { full_name: 'JetBrains/dated', default_branch: 'main' } },
+      'https://api.github.com/repos/JetBrains/dated/commits/main': { status: 200, body: { sha: commit } },
+      [search]: { status: 200, body: { total_count: 3, items: paths.map((path) => ({ path })) } },
+      ...Object.fromEntries(paths.map((path) => [`${raw}/${path}`, { status: 200, body: `---\nname: ${path[0]}\n---\n` }])),
+      [commits('a/SKILL.md')]: { status: 200, body: [{ commit: { committer: { date: '2026-01-02T03:04:05Z' } } }] },
+      [commits('b/SKILL.md')]: { status: 500, body: { message: 'Server Error' } },
+    },
+    'github.com/JetBrains/dated',
+    'test',
+  );
+  assert.deepEqual(
+    answer.skills.map(({ name, updated }) => ({ name, updated })),
+    [
+      { name: 'a', updated: '2026-01-02T03:04:05Z' },
+      { name: 'b', updated: null },
+      { name: 'c', updated: null },
+    ],
+  );
+  assert.deepEqual(answer.warnings, [
+    `cannot tell when 2 skills were last updated: GitHub answered 500 for ${commits('b/SKILL.md')}: Server Error`,
+  ]);
 });
 
 test('a /tree/<commit> URL scans and links exactly that commit', async () => {
