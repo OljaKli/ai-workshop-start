@@ -80,6 +80,15 @@ export async function openGitHub(input: string, options: GitHubOptions): Promise
     paths,
     warnings,
     read: (path) => github.raw(`${RAW}/${id}/${sha}/${encodePath(path)}`),
+    // One request a file: with a token only, as unauthenticated requests are 60 an hour.
+    updated: options.token
+      ? async (path) => {
+          const commits = await github.json<{ commit: { committer: { date: string } } }[]>(
+            `${API}/repos/${id}/commits?path=${encodePath(path)}&sha=${sha}&per_page=1`,
+          );
+          return commits[0]?.commit.committer.date;
+        }
+      : undefined,
   };
 }
 

@@ -7,11 +7,16 @@ import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { replay } from '../src/core/replay.ts';
 import { createWebServer } from '../src/server.ts';
-import { EXAMPLE_COMMIT, github } from './helpers.ts';
+import { EXAMPLE_COMMIT, EXAMPLE_UPDATED, github } from './helpers.ts';
 
 const commit = '6666666666666666666666666666666666666666';
 const raw = `https://raw.githubusercontent.com/JetBrains/web/${commit}`;
 const paths = ['.agents/skills/tests/SKILL.md', '.claude/skills/tests/SKILL.md', 'docs/broken/SKILL.md', 'docs/html/SKILL.md'];
+/** GitHub's answer for when a file last changed at `sha`. */
+const changed = (id: string, path: string, sha: string, date: string) => ({
+  [`https://api.github.com/repos/${id}/commits?path=${path}&sha=${sha}&per_page=1`]: { status: 200, body: [{ commit: { committer: { date } } }] },
+});
+const partial = '8888888888888888888888888888888888888888';
 
 /** JetBrains/web: a skill with a copy, one with a warning, one whose description looks like HTML; then EXAMPLE. */
 const web = replay(
@@ -31,6 +36,24 @@ const web = replay(
       status: 200,
       body: '---\nname: html\ndescription: <img src=x onerror="document.title=\'pwned\'"> is text.\n---\n',
     },
+    ...changed('JetBrains/web', '.agents/skills/tests/SKILL.md', commit, '2026-07-01T10:00:00Z'),
+    ...changed('JetBrains/web', 'docs/broken/SKILL.md', commit, '2025-12-31T23:59:59Z'),
+    ...changed('JetBrains/web', 'docs/html/SKILL.md', commit, '2026-02-03T00:00:00Z'),
+    // Without a token, JetBrains/example is listed through its tree.
+    [`https://api.github.com/repos/JetBrains/example/git/trees/${EXAMPLE_COMMIT}?recursive=1`]: {
+      status: 200,
+      body: { truncated: false, tree: [{ path: '.claude/skills/commits/SKILL.md', mode: '100644', type: 'blob', sha: 'commits' }] },
+    },
+    // JetBrains/partial: GitHub tells when one of its two skills last changed, not the other.
+    'https://api.github.com/repos/JetBrains/partial': { status: 200, body: { full_name: 'JetBrains/partial', default_branch: 'main' } },
+    'https://api.github.com/repos/JetBrains/partial/commits/main': { status: 200, body: { sha: partial } },
+    'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/partial&per_page=100&page=1': {
+      status: 200,
+      body: { total_count: 2, items: [{ path: 'known/SKILL.md' }, { path: 'unknown/SKILL.md' }] },
+    },
+    [`https://raw.githubusercontent.com/JetBrains/partial/${partial}/known/SKILL.md`]: { status: 200, body: '---\nname: known\n---\n' },
+    [`https://raw.githubusercontent.com/JetBrains/partial/${partial}/unknown/SKILL.md`]: { status: 200, body: '---\nname: unknown\n---\n' },
+    ...changed('JetBrains/partial', 'known/SKILL.md', partial, '2026-06-15T12:00:00Z'),
     // The JetBrains organization: web and example above, one repository without skills, one GitHub cannot scan.
     'https://api.github.com/orgs/JetBrains': { status: 200, body: { login: 'JetBrains' } },
     'https://api.github.com/orgs/JetBrains/repos?per_page=100&page=1': {
@@ -54,20 +77,24 @@ const web = replay(
 const server = createWebServer({ fetch: web, token: 'test' });
 await new Promise<void>((resolve) => server.listen(0, resolve));
 const base = `http://localhost:${(server.address() as AddressInfo).port}`;
+// Without a token: through the tree, and no dates.
+const tokenless = createWebServer({ fetch: web });
+await new Promise<void>((resolve) => tokenless.listen(0, resolve));
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
 after(async () => {
   await browser.close();
   server.close();
+  tokenless.close();
 });
 
-async function open(path = '/') {
+async function open(path = '/', from = base) {
   const page = await browser.newPage();
-  await page.goto(`${base}${path}`);
+  await page.goto(`${from}${path}`);
   return page;
 }
 
-async function scan(url: string) {
-  const page = await open();
+async function scan(url: string, from = base) {
+  const page = await open('/', from);
   await page.fill('input[name=url]', url);
   await page.click('button[type=submit]');
   await page.locator('#status:not(:has-text("Scanning"))').waitFor();
@@ -87,6 +114,8 @@ test('paste a GitHub URL, press Scan: the repository, then each skill linked at 
   );
   assert.equal(await skill.locator('p').textContent(), 'Write commit messages the way this repository does. Use for every commit.');
   assert.equal(await skill.locator('.path').textContent(), '.claude/skills/commits/SKILL.md');
+  assert.equal(await skill.locator('.updated').textContent(), `updated ${EXAMPLE_UPDATED.slice(0, 10)}`);
+  assert.equal(await skill.locator('.updated time').getAttribute('datetime'), EXAMPLE_UPDATED);
   await page.close();
 });
 
@@ -171,6 +200,7 @@ test('paste an organization URL: its repositories on the left, the selected one\
   assert.equal(await tests.locator('h2 a').getAttribute('href'), `https://github.com/JetBrains/web/blob/${commit}/.agents/skills/tests/SKILL.md`);
   assert.equal(await tests.locator('p').textContent(), 'Run the tests.\nWith reliable results.');
   assert.equal(await tests.locator('.copies').textContent(), 'also in .claude/skills/tests/SKILL.md');
+  assert.equal(await tests.locator('.updated').textContent(), 'updated 2026-07-01');
   assert.deepEqual(await page.locator('#warnings li').allTextContents(), [
     'warning: docs/broken/SKILL.md: no front matter; using the directory name',
   ]);
@@ -287,4 +317,30 @@ test('the filter is hidden until a scan finds skills', async () => {
   const failed = await scan('/etc');
   assert.equal(await failed.isVisible('#filter'), false);
   await failed.close();
+});
+
+test('each skill shows the day it last changed, which the filter does not match', async () => {
+  const page = await scan('github.com/JetBrains/web');
+  assert.deepEqual(await page.locator('#skills .updated').allTextContents(), ['updated 2025-12-31', 'updated 2026-02-03', 'updated 2026-07-01']);
+  await page.fill('#filter', '2026');
+  assert.equal(await page.locator('#skills li:visible').count(), 0);
+  await page.close();
+});
+
+test('without GITHUB_TOKEN no date shows, and nothing else changes', async () => {
+  const example = await scan('https://github.com/JetBrains/example', `http://localhost:${(tokenless.address() as AddressInfo).port}`);
+  assert.equal(await example.textContent('#status'), `JetBrains/example · 1 skill at ${EXAMPLE_COMMIT.slice(0, 7)}`);
+  assert.equal(await example.locator('#skills .updated').count(), 0);
+  assert.equal(await example.locator('#warnings li').count(), 0);
+  await example.close();
+});
+
+test('a skill GitHub cannot date shows no date, and one warning says so', async () => {
+  const page = await scan('github.com/JetBrains/partial');
+  assert.equal(await page.locator('#skills li', { hasText: /^known/ }).locator('.updated').textContent(), 'updated 2026-06-15');
+  assert.equal(await page.locator('#skills li', { hasText: /^unknown/ }).locator('.updated').count(), 0);
+  assert.deepEqual(await page.locator('#warnings li').allTextContents(), [
+    `warning: cannot tell when 1 skill was last updated: Cannot reach GitHub: not recorded: https://api.github.com/repos/JetBrains/partial/commits?path=unknown/SKILL.md&sha=${partial}&per_page=1`,
+  ]);
+  await page.close();
 });

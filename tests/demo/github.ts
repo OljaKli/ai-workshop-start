@@ -1,10 +1,14 @@
 // GitHub, prepared in advance for the demo and its screenshot tests: the real JetBrains repositories of tests/snapshots, at
-// their fixed commits, and a JetBrains organization that lists them. Offline and the same on every
-// run, so a recording never depends on the network or the rate limit.
+// their fixed commits, when each skill last changed (updated.json), and a JetBrains organization
+// that lists them. Offline and the same on every run, so a recording never depends on the network
+// or the rate limit.
 import { readFileSync } from 'node:fs';
 import { replay, type Recording } from '../../src/core/replay.ts';
 
 const snapshots = new URL('../snapshots/', import.meta.url);
+
+/** When each skill last changed at the snapshot's commit, as GitHub answered it once. */
+const updated: Record<string, Record<string, string>> = JSON.parse(readFileSync(new URL('updated.json', import.meta.url), 'utf8'));
 
 /** The organization's repositories: the snapshot file and GitHub's description. */
 const repositories = [
@@ -25,6 +29,11 @@ function repository(file: string): Recording {
     const link = /^ {2}https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/([0-9a-f]{40})\/(.+)$/.exec(lines[++i])!;
     commit = link[1];
     const copies = lines[i + 1]?.startsWith('  also in ') ? lines[++i].slice('  also in '.length).split(', ') : [];
+    const encoded = link[2].split('/').map(encodeURIComponent).join('/');
+    recording[`https://api.github.com/repos/${id}/commits?path=${encoded}&sha=${commit}&per_page=1`] = {
+      status: 200,
+      body: [{ commit: { committer: { date: updated[id][link[2]] } } }],
+    };
     for (const path of [link[2], ...copies]) {
       paths.push(path);
       recording[`https://raw.githubusercontent.com/${id}/${commit}/${path}`] = {

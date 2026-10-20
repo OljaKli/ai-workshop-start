@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { AtlasError } from './core/errors.ts';
 import { listOrganization, openGitHub, parseGitHubOrganizationUrl, parseGitHubUrl, type Fetch, type Organization } from './core/github.ts';
-import { skillLink } from './core/model.ts';
-import { scan } from './core/scan.ts';
+import { skillLink, type Skill } from './core/model.ts';
+import { scan, type Source } from './core/scan.ts';
 
 export type WebOptions = {
   fetch: Fetch;
@@ -17,7 +17,7 @@ export type WebOptions = {
 /** What `GET /api/scan?url=<GitHub URL>` answers. */
 export type ScanAnswer = {
   repository: { id: string; url: string; commit: string };
-  skills: { id: string; name: string; description: string; path: string; link: string; copies: string[] }[];
+  skills: { id: string; name: string; description: string; path: string; link: string; copies: string[]; updated: string | null }[];
   warnings: string[];
 };
 
@@ -50,18 +50,21 @@ export function createWebServer(options: WebOptions): Server {
 async function scanAnswer(input: string, options: WebOptions): Promise<[number, ScanAnswer | { error: string }]> {
   if (!parseGitHubUrl(input)) return [400, { error: `Not a GitHub repository URL: ${input}` }];
   try {
-    const { repository, skills, warnings } = await scan(await openGitHub(input, options));
+    const source = await openGitHub(input, options);
+    const { repository, skills, warnings } = await scan(source);
+    const updated = await lastUpdated(source, skills, warnings);
     return [
       200,
       {
         repository: { id: repository.id, url: repository.url, commit: repository.commit },
-        skills: skills.map((skill) => ({
+        skills: skills.map((skill, index) => ({
           id: skill.id,
           name: skill.name,
           description: skill.description,
           path: skill.path,
           link: skillLink(repository, skill),
           copies: skill.copies,
+          updated: updated[index],
         })),
         warnings,
       },
@@ -69,6 +72,25 @@ async function scanAnswer(input: string, options: WebOptions): Promise<[number, 
   } catch (error) {
     return failure(error);
   }
+}
+
+/** When each skill last changed, or null: unknown without a token; lookups GitHub cannot answer are one warning. */
+async function lastUpdated(source: Source, skills: Skill[], warnings: string[]): Promise<(string | null)[]> {
+  if (!source.updated) return skills.map(() => null);
+  const results = await Promise.all(
+    skills.map((skill) =>
+      source.updated!(skill.path).then(
+        (date) => ({ date: date ?? null }),
+        (error: unknown) => ({ date: null, error: error instanceof Error ? error.message : String(error) }),
+      ),
+    ),
+  );
+  // In skill order, whichever lookup answered first: the same warning every time.
+  const failures = results.flatMap((result) => ('error' in result ? [result.error] : []));
+  if (failures.length > 0) {
+    warnings.push(`cannot tell when ${failures.length} ${failures.length === 1 ? 'skill was' : 'skills were'} last updated: ${failures[0]}`);
+  }
+  return results.map((result) => result.date);
 }
 
 /** 200 and the repositories; 400 for input that is not a GitHub organization; 502 when GitHub cannot list it. */

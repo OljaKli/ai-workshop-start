@@ -11,6 +11,9 @@ export const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 /** The commit GitHub answers for JetBrains/example. */
 export const EXAMPLE_COMMIT = '5ab6270ab772d113e8ad52ebfcaa0109c522ae00';
 
+/** When its one skill last changed, as GitHub answers it with a token. */
+export const EXAMPLE_UPDATED = '2026-05-04T08:30:00Z';
+
 /** What GitHub answers for a small repository, JetBrains/example, with one skill. */
 const EXAMPLE: Recording = {
   'https://api.github.com/repos/JetBrains/example': { status: 200, body: { full_name: 'JetBrains/example', default_branch: 'main' } },
@@ -18,6 +21,10 @@ const EXAMPLE: Recording = {
   'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/example&per_page=100&page=1': {
     status: 200,
     body: { total_count: 1, items: [{ path: '.claude/skills/commits/SKILL.md' }] },
+  },
+  [`https://api.github.com/repos/JetBrains/example/commits?path=.claude/skills/commits/SKILL.md&sha=${EXAMPLE_COMMIT}&per_page=1`]: {
+    status: 200,
+    body: [{ commit: { committer: { date: EXAMPLE_UPDATED } } }],
   },
   [`https://raw.githubusercontent.com/JetBrains/example/${EXAMPLE_COMMIT}/.claude/skills/commits/SKILL.md`]: {
     status: 200,
