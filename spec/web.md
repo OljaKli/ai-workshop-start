@@ -17,3 +17,7 @@ copies, then the warnings. The scanned URL goes into the address bar as
 - 502 `{ error }`: GitHub cannot be scanned (not found, unreachable, rate limit),
   with the CLI's message
 - Any other path: 404 `{ error }`; other methods than GET/HEAD: 405
+## Browser proof
+`npm run test:browser` drives the page in headless Chromium with recorded GitHub
+answers: scan, `also in`, warnings, HTML in a description shown as text, the
+`?url=` address, and error messages.

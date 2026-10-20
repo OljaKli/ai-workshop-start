@@ -17,7 +17,8 @@ Or in the browser: `./skill-atlas serve` opens http://localhost:3000, where you 
 GitHub URL and press *Scan* ([spec/web.md](spec/web.md)).
 
 Set `GITHUB_TOKEN` for a higher GitHub rate limit. `npm test` runs the offline
-tests; `GITHUB_TOKEN=… npm run test:e2e` compares fixed-commit scans of three
+tests; `npm run test:browser` drives the web page in headless Chromium (once:
+`npx playwright install chromium-headless-shell`); `GITHUB_TOKEN=… npm run test:e2e` compares fixed-commit scans of three
 real JetBrains repositories with checked-in snapshots.
 
 - [spec/](spec/): what it does. [AGENTS.md](AGENTS.md): the definition of done.
