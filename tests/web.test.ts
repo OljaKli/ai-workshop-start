@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { after, test } from 'node:test';
 import { replay, type Recording } from '../src/core/replay.ts';
-import { createWebServer, type ScanAnswer } from '../src/server.ts';
+import { createWebServer, type OrganizationAnswer, type ScanAnswer } from '../src/server.ts';
 import { CLI, EXAMPLE_COMMIT, FIXTURE, github } from './helpers.ts';
 
 const server = createWebServer({ fetch: github, token: 'test' });
@@ -45,7 +45,8 @@ test('GET / is the page with a field for the GitHub URL', async () => {
   const html = await response.text();
   assert.match(html, /<title>Skill Atlas<\/title>/);
   assert.match(html, /<input name="url"/);
-  assert.match(html, /api\/scan\?url=/);
+  assert.match(html, /'api\/scan'/);
+  assert.match(html, /'api\/organization'/);
 });
 
 test('the API answers the repository and each skill with its full description and pinned link', async () => {
@@ -123,6 +124,88 @@ test('a repository GitHub cannot scan → 502 with the CLI message', async () =>
   assert.deepEqual(await notFound.json(), {
     error: 'Cannot reach GitHub: not recorded: https://api.github.com/repos/JetBrains/not-answered',
   });
+});
+
+/** The API's status and answer for an organization URL, with GitHub answering from a recording. */
+async function organizationRecorded(recording: Recording, url: string): Promise<[number, OrganizationAnswer | { error: string }]> {
+  const other = createWebServer({ fetch: replay(recording) });
+  await new Promise<void>((resolve) => other.listen(0, resolve));
+  try {
+    const port = (other.address() as AddressInfo).port;
+    const response = await fetch(`http://localhost:${port}/api/organization?url=${encodeURIComponent(url)}`);
+    assert.match(response.headers.get('content-type') ?? '', /^application\/json/);
+    return [response.status, (await response.json()) as OrganizationAnswer];
+  } finally {
+    other.close();
+  }
+}
+
+const repo = (name: string, description: string | null = null) => ({ name, full_name: `JetBrains/${name}`, description });
+
+test('an organization URL answers every repository, all pages, sorted by name', async () => {
+  const first = Array.from({ length: 100 }, (_, i) => repo(`r${String(i).padStart(3, '0')}`));
+  const [status, answer] = await organizationRecorded(
+    {
+      'https://api.github.com/orgs/jetbrains': { status: 200, body: { login: 'JetBrains' } },
+      'https://api.github.com/orgs/JetBrains/repos?per_page=100&page=1': { status: 200, body: first },
+      'https://api.github.com/orgs/JetBrains/repos?per_page=100&page=2': {
+        status: 200,
+        body: [repo('Kotlin', 'The Kotlin language'), repo('amper')],
+      },
+    },
+    'https://github.com/jetbrains/',
+  );
+  assert.equal(status, 200);
+  const { id, url, repositories } = answer as OrganizationAnswer;
+  assert.deepEqual({ id, url }, { id: 'JetBrains', url: 'https://github.com/JetBrains' });
+  assert.equal(repositories.length, 102);
+  assert.deepEqual(repositories[0], { id: 'JetBrains/amper', name: 'amper', url: 'https://github.com/JetBrains/amper', description: '' });
+  assert.deepEqual(repositories[1], {
+    id: 'JetBrains/Kotlin',
+    name: 'Kotlin',
+    url: 'https://github.com/JetBrains/Kotlin',
+    description: 'The Kotlin language',
+  });
+  assert.equal(repositories[101].name, 'r099');
+});
+
+test('an organization without repositories answers an empty list', async () => {
+  const [status, answer] = await organizationRecorded(
+    {
+      'https://api.github.com/orgs/empty': { status: 200, body: { login: 'empty' } },
+      'https://api.github.com/orgs/empty/repos?per_page=100&page=1': { status: 200, body: [] },
+    },
+    'github.com/empty',
+  );
+  assert.equal(status, 200);
+  assert.deepEqual(answer, { id: 'empty', url: 'https://github.com/empty', repositories: [] });
+});
+
+test('an organization GitHub cannot list → 502 with a clear message', async () => {
+  const recording: Recording = {
+    'https://api.github.com/orgs/nobody': { status: 404, body: { message: 'Not Found' } },
+    'https://api.github.com/orgs/limited': { status: 403, body: { message: 'API rate limit exceeded for 1.2.3.4.' } },
+  };
+  assert.deepEqual(await organizationRecorded(recording, 'github.com/nobody'), [
+    502,
+    { error: 'Organization not found: https://github.com/nobody' },
+  ]);
+  assert.deepEqual(await organizationRecorded(recording, 'github.com/limited'), [
+    502,
+    { error: 'GitHub rate limit reached; set GITHUB_TOKEN' },
+  ]);
+  assert.deepEqual(await organizationRecorded(recording, 'github.com/unrecorded'), [
+    502,
+    { error: 'Cannot reach GitHub: not recorded: https://api.github.com/orgs/unrecorded' },
+  ]);
+});
+
+test('a repository URL, a local directory or other text is not an organization: 400', async () => {
+  for (const input of ['https://github.com/JetBrains/example', FIXTURE, '', 'https://gitlab.com/JetBrains']) {
+    const response = await fetch(`${base}/api/organization?url=${encodeURIComponent(input)}`);
+    assert.equal(response.status, 400, input);
+    assert.deepEqual(await response.json(), { error: `Not a GitHub organization URL: ${input}` });
+  }
 });
 
 test('other paths → 404, other methods → 405', async () => {

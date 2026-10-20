@@ -1,9 +1,10 @@
-// The web client: one page where you paste a GitHub URL, and the JSON API it calls. Like the CLI,
-// a thin client over the core; nothing is stored. Local directories are not served.
+// The web client: one page where you paste a GitHub repository or organization URL, and the JSON
+// API it calls. Like the CLI, a thin client over the core; nothing is stored. Local directories
+// are not served.
 import { readFile } from 'node:fs/promises';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { AtlasError } from './core/errors.ts';
-import { openGitHub, parseGitHubUrl, type Fetch } from './core/github.ts';
+import { listOrganization, openGitHub, parseGitHubOrganizationUrl, parseGitHubUrl, type Fetch, type Organization } from './core/github.ts';
 import { skillLink } from './core/model.ts';
 import { scan } from './core/scan.ts';
 
@@ -20,6 +21,9 @@ export type ScanAnswer = {
   warnings: string[];
 };
 
+/** What `GET /api/organization?url=<GitHub organization URL>` answers. */
+export type OrganizationAnswer = Organization;
+
 const page = new URL('./web/index.html', import.meta.url);
 
 export function createWebServer(options: WebOptions): Server {
@@ -32,6 +36,10 @@ export function createWebServer(options: WebOptions): Server {
     }
     if (url.pathname === '/api/scan') {
       const [status, body] = await scanAnswer(url.searchParams.get('url') ?? '', options);
+      return send(response, status, body);
+    }
+    if (url.pathname === '/api/organization') {
+      const [status, body] = await organizationAnswer(url.searchParams.get('url') ?? '', options);
       return send(response, status, body);
     }
     send(response, 404, { error: `Not found: ${url.pathname}` });
@@ -59,9 +67,23 @@ async function scanAnswer(input: string, options: WebOptions): Promise<[number, 
       },
     ];
   } catch (error) {
-    if (error instanceof AtlasError) return [502, { error: error.message }];
-    return [500, { error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}` }];
+    return failure(error);
   }
+}
+
+/** 200 and the repositories; 400 for input that is not a GitHub organization; 502 when GitHub cannot list it. */
+async function organizationAnswer(input: string, options: WebOptions): Promise<[number, OrganizationAnswer | { error: string }]> {
+  if (!parseGitHubOrganizationUrl(input)) return [400, { error: `Not a GitHub organization URL: ${input}` }];
+  try {
+    return [200, await listOrganization(input, options)];
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+function failure(error: unknown): [number, { error: string }] {
+  if (error instanceof AtlasError) return [502, { error: error.message }];
+  return [500, { error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}` }];
 }
 
 function send(response: ServerResponse, status: number, body: unknown) {

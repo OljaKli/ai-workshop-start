@@ -31,6 +31,21 @@ const web = replay(
       status: 200,
       body: '---\nname: html\ndescription: <img src=x onerror="document.title=\'pwned\'"> is text.\n---\n',
     },
+    // The JetBrains organization: web and example above, one repository without skills, one GitHub cannot scan.
+    'https://api.github.com/orgs/JetBrains': { status: 200, body: { login: 'JetBrains' } },
+    'https://api.github.com/orgs/JetBrains/repos?per_page=100&page=1': {
+      status: 200,
+      body: ['web', 'gone', 'example', 'empty'].map((name) => ({ name, full_name: `JetBrains/${name}`, description: null })),
+    },
+    'https://api.github.com/repos/JetBrains/empty': { status: 200, body: { full_name: 'JetBrains/empty', default_branch: 'main' } },
+    'https://api.github.com/repos/JetBrains/empty/commits/main': { status: 200, body: { sha: commit } },
+    'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/empty&per_page=100&page=1': {
+      status: 200,
+      body: { total_count: 0, items: [] },
+    },
+    'https://api.github.com/orgs/quiet': { status: 200, body: { login: 'quiet' } },
+    'https://api.github.com/orgs/quiet/repos?per_page=100&page=1': { status: 200, body: [] },
+    'https://api.github.com/orgs/nobody': { status: 404, body: { message: 'Not Found' } },
   },
   github,
 );
@@ -121,6 +136,115 @@ test('a local directory or a repository GitHub cannot scan → the message, in r
     assert.equal(await page.locator('#skills li').count(), 0);
     await page.close();
   }
+});
+
+async function scanOrganization(url: string) {
+  const page = await open();
+  await page.fill('input[name=url]', url);
+  await page.click('button[type=submit]');
+  await page.locator('#status:not(:has-text("Loading repositories"))').waitFor();
+  return page;
+}
+
+async function select(page: Awaited<ReturnType<typeof open>>, name: string) {
+  await page.locator('#repositories button', { hasText: new RegExp(`^${name}$`) }).click();
+  await page.locator('#repository-status:not(:has-text("Scanning"))').waitFor();
+}
+
+test('paste an organization URL: its repositories on the left, the selected one\'s skills on the right', async () => {
+  const page = await scanOrganization('https://github.com/JetBrains');
+  assert.equal(await page.textContent('#status'), 'JetBrains · 4 repositories');
+  assert.equal(await page.getAttribute('#status a', 'href'), 'https://github.com/JetBrains');
+  assert.deepEqual(await page.locator('#repositories button').allTextContents(), ['empty', 'example', 'gone', 'web']);
+  assert.equal(await page.textContent('#repository-status'), 'Select a repository to see its skills.');
+  assert.equal(await page.locator('#skills li').count(), 0);
+  // Left and right: the list sits beside the skills.
+  const list = await page.locator('#repositories').boundingBox();
+  const right = await page.locator('#skills').boundingBox();
+  assert.ok(list && right && list.x + list.width <= right.x, 'the repositories are left of the skills');
+
+  await select(page, 'web');
+  assert.equal(await page.textContent('#repository-status'), `JetBrains/web · 3 skills at ${commit.slice(0, 7)}`);
+  assert.equal(await page.getAttribute('#repositories button[aria-current=true]', 'title'), 'JetBrains/web');
+  assert.deepEqual(await page.locator('#skills h2').allTextContents(), ['broken', 'html', 'tests']);
+  const tests = page.locator('#skills li', { hasText: 'tests' });
+  assert.equal(await tests.locator('h2 a').getAttribute('href'), `https://github.com/JetBrains/web/blob/${commit}/.agents/skills/tests/SKILL.md`);
+  assert.equal(await tests.locator('p').textContent(), 'Run the tests.\nWith reliable results.');
+  assert.equal(await tests.locator('.copies').textContent(), 'also in .claude/skills/tests/SKILL.md');
+  assert.deepEqual(await page.locator('#warnings li').allTextContents(), [
+    'warning: docs/broken/SKILL.md: no front matter; using the directory name',
+  ]);
+  await page.fill('#filter', 'tests. with reliable');
+  assert.deepEqual(await page.locator('#skills li:visible h2').allTextContents(), ['tests']);
+
+  await select(page, 'example');
+  assert.equal(await page.textContent('#repository-status'), `JetBrains/example · 1 skill at ${EXAMPLE_COMMIT.slice(0, 7)}`);
+  assert.deepEqual(await page.locator('#skills h2').allTextContents(), ['commits']);
+  assert.equal(await page.locator('#warnings li').count(), 0);
+  assert.equal(await page.textContent('#status'), 'JetBrains · 4 repositories');
+  await page.close();
+});
+
+test('an organization repository without skills, or one GitHub cannot scan, says so on the right', async () => {
+  const page = await scanOrganization('github.com/JetBrains');
+  await select(page, 'empty');
+  assert.equal(await page.textContent('#repository-status'), `JetBrains/empty · 0 skills at ${commit.slice(0, 7)}`);
+  assert.deepEqual(await page.locator('#skills li').allTextContents(), ['No skills in JetBrains/empty.']);
+
+  await select(page, 'gone');
+  assert.equal(await page.textContent('#repository-status'), 'Cannot reach GitHub: not recorded: https://api.github.com/repos/JetBrains/gone');
+  assert.equal(await page.getAttribute('#repository-status', 'class'), 'error');
+  assert.equal(await page.locator('#skills li').count(), 0);
+  assert.equal(await page.locator('#repositories button').count(), 4);
+  await page.close();
+});
+
+test('a late error from an earlier repository does not replace the selected repository status', async () => {
+  const page = await scanOrganization('github.com/JetBrains');
+  await page.route('**/api/scan?*', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('url')?.endsWith('/gone')) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await route.continue();
+  });
+
+  await page.locator('#repositories button', { hasText: /^gone$/ }).click();
+  await select(page, 'web');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  assert.equal(await page.textContent('#repository-status'), `JetBrains/web · 3 skills at ${commit.slice(0, 7)}`);
+  assert.deepEqual(await page.locator('#skills h2').allTextContents(), ['broken', 'html', 'tests']);
+  await page.close();
+});
+
+test('an organization without repositories, or one GitHub cannot list, says so', async () => {
+  const quiet = await scanOrganization('github.com/quiet');
+  assert.equal(await quiet.textContent('#status'), 'quiet · 0 repositories');
+  assert.equal(await quiet.locator('#repositories').isVisible(), false);
+  await quiet.close();
+
+  const nobody = await scanOrganization('github.com/nobody');
+  assert.equal(await nobody.textContent('#status'), 'Organization not found: https://github.com/nobody');
+  assert.equal(await nobody.getAttribute('#status', 'class'), 'error');
+  assert.equal(await nobody.locator('#repositories li').count(), 0);
+  await nobody.close();
+});
+
+test('an organization URL goes into the address bar, and a repository scan after it shows no list', async () => {
+  const page = await scanOrganization('github.com/JetBrains');
+  assert.equal(new URL(page.url()).searchParams.get('url'), 'github.com/JetBrains');
+  await page.fill('input[name=url]', 'https://github.com/JetBrains/example');
+  await page.click('button[type=submit]');
+  await page.locator('#status', { hasText: 'JetBrains/example' }).waitFor();
+  assert.equal(await page.locator('#repositories').isVisible(), false);
+  assert.equal(await page.locator('#repository-status').isVisible(), false);
+  assert.deepEqual(await page.locator('#skills h2').allTextContents(), ['commits']);
+  await page.close();
+
+  const opened = await open(`/?url=${encodeURIComponent('github.com/JetBrains')}`);
+  await opened.locator('#repositories button').first().waitFor();
+  assert.equal(await opened.locator('#repositories button').count(), 4);
+  await opened.close();
 });
 
 test('typing in the filter shows only the skills whose name, description or path match, ignoring case', async () => {

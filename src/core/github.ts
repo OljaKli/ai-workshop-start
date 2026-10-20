@@ -23,6 +23,43 @@ export function parseGitHubUrl(input: string): { owner: string; repo: string; co
   return match ? { owner: match[1], repo: match[2], commit: match[3] } : undefined;
 }
 
+/** A GitHub organization: `github.com/<organization>`, nothing after it. */
+export function parseGitHubOrganizationUrl(input: string): { organization: string } | undefined {
+  const match = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/?$/i.exec(input.trim());
+  return match ? { organization: match[1] } : undefined;
+}
+
+/** An organization's repositories, as GitHub lists them to the token (public ones without). */
+export type Organization = {
+  id: string;
+  url: string;
+  repositories: { id: string; name: string; url: string; description: string }[];
+};
+
+/** Every repository of an organization, 100 a page, sorted by name. */
+export async function listOrganization(input: string, options: GitHubOptions): Promise<Organization> {
+  const name = parseGitHubOrganizationUrl(input);
+  if (!name) throw new AtlasError(`Not a GitHub organization URL: ${input}`);
+  const github = client(options);
+  const { login } = await github.json<{ login: string }>(
+    `${API}/orgs/${encodeURIComponent(name.organization)}`,
+    `Organization not found: https://github.com/${name.organization}`,
+  );
+  const repositories: Organization['repositories'] = [];
+  for (let page = 1; ; page++) {
+    const answer = await github.json<{ full_name: string; name: string; description: string | null }[]>(
+      `${API}/orgs/${login}/repos?per_page=100&page=${page}`,
+    );
+    for (const repo of answer) {
+      repositories.push({ id: repo.full_name, name: repo.name, url: `https://github.com/${repo.full_name}`, description: repo.description ?? '' });
+    }
+    if (answer.length < 100) break;
+  }
+  const key = (repo: { name: string }) => repo.name.toLowerCase();
+  repositories.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  return { id: login, url: `https://github.com/${login}`, repositories };
+}
+
 /** Resolves the default branch to a commit and lists the files that may be skills. */
 export async function openGitHub(input: string, options: GitHubOptions): Promise<Source> {
   const name = parseGitHubUrl(input);
@@ -147,7 +184,7 @@ function client({ fetch, token }: GitHubOptions) {
     },
     /** A file's bytes at the scanned commit, or undefined if it is not there. */
     async raw(url: string): Promise<Uint8Array | undefined> {
-      const response = await get(url);
+      const response = await get(url, { headers });
       if (response.status === 404) return undefined;
       if (!response.ok) throw new AtlasError(`GitHub answered ${response.status} for ${url}`);
       return new Uint8Array(await response.arrayBuffer());

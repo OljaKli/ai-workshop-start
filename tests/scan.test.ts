@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
-import { openGitHub } from '../src/core/github.ts';
+import { openGitHub, type Fetch } from '../src/core/github.ts';
 import { parseSkill } from '../src/core/parse.ts';
 import { replay } from '../src/core/replay.ts';
 import { scan } from '../src/core/scan.ts';
@@ -161,6 +161,31 @@ test('GitHub code search warns when more than 1,000 files match', async () => {
 
   const source = await openGitHub('https://github.com/JetBrains/capped', { fetch: github, token: 'test' });
   assert.deepEqual(source.warnings, ['GitHub code search found over 1,000 files; only the first 1,000 were scanned']);
+});
+
+test('a token authenticates skill file reads for private repositories', async () => {
+  const commit = '7777777777777777777777777777777777777777';
+  const path = 'skills/private/SKILL.md';
+  const raw = `https://raw.githubusercontent.com/JetBrains/private/${commit}/${path}`;
+  const recorded = replay({
+    'https://api.github.com/repos/JetBrains/private': {
+      status: 200,
+      body: { full_name: 'JetBrains/private', default_branch: 'main' },
+    },
+    'https://api.github.com/repos/JetBrains/private/commits/main': { status: 200, body: { sha: commit } },
+    'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/private&per_page=100&page=1': {
+      status: 200,
+      body: { total_count: 1, items: [{ path }] },
+    },
+    [raw]: { status: 200, body: '---\nname: private\ndescription: Read a private skill.\n---\n' },
+  });
+  const github: Fetch = async (url, init) => {
+    if (url === raw) assert.equal(init?.headers?.Authorization, 'Bearer secret');
+    return recorded(url, init);
+  };
+
+  const result = await scan(await openGitHub('https://github.com/JetBrains/private', { fetch: github, token: 'secret' }));
+  assert.deepEqual(result.skills.map(({ name, path: skillPath }) => ({ name, path: skillPath })), [{ name: 'private', path }]);
 });
 
 test('the CLI prints the result at once and stores nothing', (t) => {
