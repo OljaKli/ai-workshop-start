@@ -119,3 +119,44 @@ test('a local directory or a repository GitHub cannot scan → the message, in r
     await page.close();
   }
 });
+
+test('typing in the filter shows only the skills whose name, description or path match, ignoring case', async () => {
+  const page = await scan('github.com/JetBrains/web');
+  const shown = () => page.locator('#skills li:visible h2').allTextContents();
+  assert.equal(await page.isVisible('#filter'), true);
+  for (const [query, names] of [
+    ['TESTS', ['tests']],
+    ['run THE', ['tests']],
+    ['Docs/', ['broken', 'html']],
+  ] as const) {
+    await page.fill('#filter', query);
+    assert.deepEqual(await shown(), names, query);
+  }
+  assert.equal(await page.isVisible('#no-match'), false);
+  await page.close();
+});
+
+test('a filter that matches nothing says so, and clearing it shows every skill again without a new scan', async () => {
+  const page = await scan('github.com/JetBrains/web');
+  const scans: string[] = [];
+  page.on('request', (request) => request.url().includes('/api/scan') && scans.push(request.url()));
+  await page.fill('#filter', 'kotlin');
+  assert.equal(await page.locator('#skills li:visible').count(), 0);
+  assert.equal(await page.textContent('#no-match:visible'), 'No skills match “kotlin”.');
+  assert.equal(await page.textContent('#status'), `JetBrains/web · 3 skills at ${commit.slice(0, 7)}`);
+
+  await page.fill('#filter', '');
+  assert.deepEqual(await page.locator('#skills li:visible h2').allTextContents(), ['broken', 'html', 'tests']);
+  assert.equal(await page.isVisible('#no-match'), false);
+  assert.deepEqual(scans, []);
+  await page.close();
+});
+
+test('the filter is hidden until a scan finds skills', async () => {
+  const page = await open();
+  assert.equal(await page.isVisible('#filter'), false);
+  await page.close();
+  const failed = await scan('/etc');
+  assert.equal(await failed.isVisible('#filter'), false);
+  await failed.close();
+});

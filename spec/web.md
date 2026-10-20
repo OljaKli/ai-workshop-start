@@ -9,6 +9,11 @@ Like the CLI, a *thin client* over the core; *nothing is stored*.
 (linked to its pinned SKILL.md), full **description**, path and `also in`
 copies, then the warnings. The scanned URL goes into the address bar as
 `?url=<GitHub URL>`, and opening such an address scans it at once.
+
+Once a scan finds skills, a filter field shows above them. Typing narrows the
+displayed skills, *case-insensitively*, to those whose name, description or
+path contains the text; when none match, the page says so. Clearing the field
+shows every scanned skill again, *without rescanning* GitHub.
 ## API
 `GET /api/scan?url=<GitHub URL>` answers JSON:
 - 200: `{ repository: { id, url, commit }, skills: [{ id, name, description,
@@ -20,4 +25,4 @@ copies, then the warnings. The scanned URL goes into the address bar as
 ## Browser proof
 `npm run test:browser` drives the page in headless Chromium with recorded GitHub
 answers: scan, `also in`, warnings, HTML in a description shown as text, the
-`?url=` address, and error messages.
+`?url=` address, error messages, and the filter: matching, no matches, clearing.
