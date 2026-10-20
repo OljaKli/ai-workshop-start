@@ -7,11 +7,16 @@ import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { replay } from '../src/core/replay.ts';
 import { createWebServer } from '../src/server.ts';
-import { EXAMPLE_COMMIT, github } from './helpers.ts';
+import { EXAMPLE_COMMIT, EXAMPLE_UPDATED, github } from './helpers.ts';
 
 const commit = '6666666666666666666666666666666666666666';
 const raw = `https://raw.githubusercontent.com/JetBrains/web/${commit}`;
 const paths = ['.agents/skills/tests/SKILL.md', '.claude/skills/tests/SKILL.md', 'docs/broken/SKILL.md', 'docs/html/SKILL.md'];
+
+/** The GitHub request for when a SKILL.md of JetBrains/<repo> last changed, as of `commit`. */
+function lastChanged(repo: string, path: string) {
+  return `https://api.github.com/repos/JetBrains/${repo}/commits?sha=${commit}&path=${encodeURIComponent(path)}&per_page=1`;
+}
 
 /** JetBrains/web: a skill with a copy, one with a warning, one whose description looks like HTML; then EXAMPLE. */
 const web = replay(
@@ -46,6 +51,29 @@ const web = replay(
     'https://api.github.com/orgs/quiet': { status: 200, body: { login: 'quiet' } },
     'https://api.github.com/orgs/quiet/repos?per_page=100&page=1': { status: 200, body: [] },
     'https://api.github.com/orgs/nobody': { status: 404, body: { message: 'Not Found' } },
+    // When each canonical SKILL.md last changed.
+    ...Object.fromEntries(
+      [
+        ['.agents/skills/tests/SKILL.md', '2026-10-01T09:00:00Z'],
+        ['docs/broken/SKILL.md', '2025-04-30T23:30:00-02:00'],
+        ['docs/html/SKILL.md', '2026-02-14T12:00:00Z'],
+      ].map(([path, date]) => [lastChanged('web', path), { status: 200, body: [{ commit: { committer: { date } } }] }]),
+    ),
+    // JetBrains/partial: GitHub tells when one skill last changed, not the other; with or without a token.
+    'https://api.github.com/repos/JetBrains/partial': { status: 200, body: { full_name: 'JetBrains/partial', default_branch: 'main' } },
+    'https://api.github.com/repos/JetBrains/partial/commits/main': { status: 200, body: { sha: commit } },
+    'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/partial&per_page=100&page=1': {
+      status: 200,
+      body: { total_count: 2, items: [{ path: 'known/SKILL.md' }, { path: 'unknown/SKILL.md' }] },
+    },
+    [`https://api.github.com/repos/JetBrains/partial/git/trees/${commit}?recursive=1`]: {
+      status: 200,
+      body: { truncated: false, tree: ['known/SKILL.md', 'unknown/SKILL.md'].map((path) => ({ path, mode: '100644', type: 'blob', sha: path })) },
+    },
+    [`https://raw.githubusercontent.com/JetBrains/partial/${commit}/known/SKILL.md`]: { status: 200, body: '---\nname: known\ndescription: Updated in 2026.\n---\n' },
+    [`https://raw.githubusercontent.com/JetBrains/partial/${commit}/unknown/SKILL.md`]: { status: 200, body: '---\nname: unknown\n---\n' },
+    [lastChanged('partial', 'known/SKILL.md')]: { status: 200, body: [{ commit: { committer: { date: '2026-01-05T10:00:00Z' } } }] },
+    [lastChanged('partial', 'unknown/SKILL.md')]: { status: 500, body: { message: 'Server Error' } },
   },
   github,
 );
@@ -60,14 +88,20 @@ after(async () => {
   server.close();
 });
 
-async function open(path = '/') {
+// Without a token: no dates.
+const tokenless = createWebServer({ fetch: web });
+await new Promise<void>((resolve) => tokenless.listen(0, resolve));
+after(() => tokenless.close());
+const tokenlessBase = `http://localhost:${(tokenless.address() as AddressInfo).port}`;
+
+async function open(path = '/', on = base) {
   const page = await browser.newPage();
-  await page.goto(`${base}${path}`);
+  await page.goto(`${on}${path}`);
   return page;
 }
 
-async function scan(url: string) {
-  const page = await open();
+async function scan(url: string, on = base) {
+  const page = await open('/', on);
   await page.fill('input[name=url]', url);
   await page.click('button[type=submit]');
   await page.locator('#status:not(:has-text("Scanning"))').waitFor();
@@ -87,6 +121,44 @@ test('paste a GitHub URL, press Scan: the repository, then each skill linked at 
   );
   assert.equal(await skill.locator('p').textContent(), 'Write commit messages the way this repository does. Use for every commit.');
   assert.equal(await skill.locator('.path').textContent(), '.claude/skills/commits/SKILL.md');
+  assert.equal(await skill.locator('.updated').textContent(), `updated ${EXAMPLE_UPDATED}`);
+  await page.close();
+});
+
+test('each skill shows when its SKILL.md last changed, in UTC, and the filter does not match the date', async () => {
+  const page = await scan('github.com/JetBrains/web');
+  assert.deepEqual(await page.locator('#skills .updated').allTextContents(), [
+    'updated 2025-05-01',
+    'updated 2026-02-14',
+    'updated 2026-10-01',
+  ]);
+  assert.deepEqual(await page.locator('#warnings li').allTextContents(), [
+    'warning: docs/broken/SKILL.md: no front matter; using the directory name',
+  ]);
+  for (const query of ['updated', '2026-10-01']) {
+    await page.fill('#filter', query);
+    assert.equal(await page.locator('#skills li:visible').count(), 0, query);
+  }
+  await page.close();
+});
+
+test('without GITHUB_TOKEN no date is shown and nothing else changes', async () => {
+  const page = await scan('github.com/JetBrains/partial', tokenlessBase);
+  assert.equal(await page.textContent('#status'), `JetBrains/partial · 2 skills at ${commit.slice(0, 7)}`);
+  assert.deepEqual(await page.locator('#skills h2').allTextContents(), ['known', 'unknown']);
+  assert.equal(await page.locator('#skills .updated').count(), 0);
+  assert.equal(await page.locator('#warnings li').count(), 0);
+  await page.close();
+});
+
+test('a skill GitHub cannot date shows no date, one warning says so, the scan still succeeds', async () => {
+  const page = await scan('github.com/JetBrains/partial');
+  assert.equal(await page.textContent('#status'), `JetBrains/partial · 2 skills at ${commit.slice(0, 7)}`);
+  assert.equal(await page.locator('#skills li', { hasText: 'unknown' }).locator('.updated').count(), 0);
+  assert.equal(await page.locator('#skills li', { hasText: /^known/ }).locator('.updated').textContent(), 'updated 2026-01-05');
+  assert.deepEqual(await page.locator('#warnings li').allTextContents(), [
+    'warning: GitHub could not tell when 1 skill last changed; shown without a date',
+  ]);
   await page.close();
 });
 

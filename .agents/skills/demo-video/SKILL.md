@@ -16,13 +16,15 @@ $ npm run demo -- filter --out docs/demo/filter.webm           # some cases only
 
 - [github.ts](github.ts): GitHub, prepared in advance. The real JetBrains
   repositories of `tests/snapshots` (android, koog, MPS) at their fixed
-  commits, and a `JetBrains` organization listing them. Served with a token, so
+  commits, when each of their skills last changed (`updated.json`, GitHub's
+  answers recorded once), and a `JetBrains` organization listing them. Served with a token, so
   scans go through code search.
 - [cases.ts](cases.ts): the cases, run in order in one page and one video:
   - `filter`: scan JetBrains/MPS (75 skills), filter by name, by description,
     nothing matching, then clear.
   - `organization`: paste `github.com/JetBrains`, select koog, android, MPS;
     filter MPS's skills.
+  - `updated`: scan JetBrains/android; each skill shows `updated YYYY-MM-DD`.
 - [record.ts](record.ts): starts the web server on a free port, records the
   cases at 1280×720 with Playwright's `recordVideo`, saves the `.webm`, then
   the `.gif` beside it.

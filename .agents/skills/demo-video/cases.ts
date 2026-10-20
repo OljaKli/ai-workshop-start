@@ -83,4 +83,17 @@ export const cases: Record<string, Case> = {
       await pause(page, 1500);
     },
   },
+  updated: {
+    title: 'See when each skill was last updated',
+    async run(page) {
+      await caption(page, 'Scan JetBrains/android: each skill says when it last changed');
+      await submit(page, 'https://github.com/JetBrains/android');
+      await page.locator('#status', { hasText: 'JetBrains/android · 6 skills' }).waitFor();
+      await page.locator('#skills .updated').first().waitFor();
+      await pause(page, 1500);
+      await page.locator('#skills li').nth(3).scrollIntoViewIfNeeded();
+      await caption(page, 'The date of the last commit that changed its SKILL.md, in UTC');
+      await pause(page, 2500);
+    },
+  },
 };

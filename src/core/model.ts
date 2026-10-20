@@ -22,6 +22,8 @@ export type Skill = {
   commit: string;
   /** The same skill in other agents' folders. */
   copies: string[];
+  /** When its SKILL.md last changed, as of the scanned commit: `YYYY-MM-DD`, UTC; undefined when not known. */
+  updated?: string;
 };
 
 /**

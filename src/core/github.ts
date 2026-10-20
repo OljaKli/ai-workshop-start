@@ -80,7 +80,18 @@ export async function openGitHub(input: string, options: GitHubOptions): Promise
     paths,
     warnings,
     read: (path) => github.raw(`${RAW}/${id}/${sha}/${encodePath(path)}`),
+    // One request per skill, so only with a token, like code search.
+    updated: options.token ? (path) => lastChanged(github, id, sha, path) : undefined,
   };
+}
+
+/** The date of the latest commit up to `sha` that changed the file, in UTC; undefined if GitHub lists none. */
+async function lastChanged(github: Client, id: string, sha: string, path: string): Promise<string | undefined> {
+  const commits = await github.json<{ commit: { committer: { date?: string } | null } }[]>(
+    `${API}/repos/${id}/commits?sha=${sha}&path=${encodeURIComponent(path)}&per_page=1`,
+  );
+  const date = commits[0]?.commit.committer?.date;
+  return date ? new Date(date).toISOString().slice(0, 10) : undefined;
 }
 
 /** Code search looks at the whole default branch, 100 results a page. */

@@ -6,6 +6,9 @@ import { replay, type Recording } from '../../../src/core/replay.ts';
 
 const snapshots = new URL('../../../tests/snapshots/', import.meta.url);
 
+/** When each skill's SKILL.md last changed, as of its snapshot commit: GitHub's answers, recorded once. */
+const updated: Record<string, string> = JSON.parse(readFileSync(new URL('updated.json', import.meta.url), 'utf8'));
+
 /** The organization's repositories: the snapshot file and GitHub's description. */
 const repositories = [
   { file: 'android.txt', description: 'Android Studio and the Android plugin for IntelliJ IDEA' },
@@ -25,6 +28,11 @@ function repository(file: string): Recording {
     const link = /^ {2}https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/([0-9a-f]{40})\/(.+)$/.exec(lines[++i])!;
     commit = link[1];
     const copies = lines[i + 1]?.startsWith('  also in ') ? lines[++i].slice('  also in '.length).split(', ') : [];
+    const date = updated[`${id}:${link[2]}`];
+    recording[`https://api.github.com/repos/${id}/commits?sha=${commit}&path=${encodeURIComponent(link[2])}&per_page=1`] = {
+      status: 200,
+      body: date ? [{ commit: { committer: { date } } }] : [],
+    };
     for (const path of [link[2], ...copies]) {
       paths.push(path);
       recording[`https://raw.githubusercontent.com/${id}/${commit}/${path}`] = {
