@@ -61,7 +61,7 @@
 
     /** Shows only the scanned skills whose name, description or path contains the filter, ignoring case. */
     function applyFilter() {
-      const query = filter.value.trim().toLowerCase();
+      const query = filter.value.trim().replace(/\s+/g, ' ').toLowerCase();
       let shown = 0;
       for (const item of skills.children) {
         item.hidden = !item.dataset.text.includes(query);
@@ -101,7 +101,10 @@
       show(summary);
       for (const skill of found) {
         const item = element('li');
-        item.dataset.text = [skill.name, skill.description, skill.path].join('\n').toLowerCase();
+        item.dataset.text = [skill.name, skill.description, skill.path]
+          .map((text) => text.trim().replace(/\s+/g, ' '))
+          .join('\0')
+          .toLowerCase();
         const title = element('h2');
         title.append(element('a', skill.name, { href: skill.link }));
         item.append(title);

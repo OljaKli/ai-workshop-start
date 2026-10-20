@@ -12,7 +12,8 @@ copies, then the warnings. The scanned URL goes into the address bar as
 
 Once a scan finds skills, a filter field shows above them. Typing narrows the
 displayed skills, *case-insensitively*, to those whose name, description or
-path contains the text; when none match, the page says so. Clearing the field
+path contains the text. Whitespace is matched as users see it in the page, so
+words across a line break are separated by one space. When none match, the page says so. Clearing the field
 shows every scanned skill again, *without rescanning* GitHub.
 ## API
 `GET /api/scan?url=<GitHub URL>` answers JSON:

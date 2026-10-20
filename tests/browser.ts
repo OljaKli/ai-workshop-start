@@ -22,7 +22,10 @@ const web = replay(
       status: 200,
       body: { total_count: paths.length, items: paths.map((path) => ({ path })) },
     },
-    [`${raw}/.agents/skills/tests/SKILL.md`]: { status: 200, body: '---\nname: tests\ndescription: Run the tests.\n---\n' },
+    [`${raw}/.agents/skills/tests/SKILL.md`]: {
+      status: 200,
+      body: '---\nname: tests\ndescription: |\n  Run the tests.\n  With reliable results.\n---\n',
+    },
     [`${raw}/docs/broken/SKILL.md`]: { status: 200, body: 'no front matter' },
     [`${raw}/docs/html/SKILL.md`]: {
       status: 200,
@@ -127,6 +130,7 @@ test('typing in the filter shows only the skills whose name, description or path
   for (const [query, names] of [
     ['TESTS', ['tests']],
     ['run THE', ['tests']],
+    ['tests. with reliable', ['tests']],
     ['Docs/', ['broken', 'html']],
   ] as const) {
     await page.fill('#filter', query);
