@@ -9,4 +9,5 @@ build-tools-bump-gradle-api — Bumps the Gradle API…
   https://github.com/JetBrains/kotlin/blob/<commit>/…
 ```
 - Sorted by **name**; the description's *first sentence*
-- `also in <paths>` for copies; warnings go to *stderr*
+- Agent-root copies with the same relative path print once, followed by
+  `also in <paths>`; warnings go to *stderr*

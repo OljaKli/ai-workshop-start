@@ -1,6 +1,5 @@
 // The decisions in spec/analysis.md and spec/cli.md, checked on what the real command prints for
-// ./fixture and for a small GitHub repository answered in tests/helpers.ts. The edge cases of
-// where skills live are yours to add.
+// ./fixture and for a small GitHub repository answered in tests/helpers.ts.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -11,6 +10,7 @@ import { test } from 'node:test';
 import { openGitHub } from '../src/core/github.ts';
 import { parseSkill } from '../src/core/parse.ts';
 import { replay } from '../src/core/replay.ts';
+import { scan } from '../src/core/scan.ts';
 import { atlas, CLI, EXAMPLE_COMMIT, FIXTURE } from './helpers.ts';
 
 const fixture = await atlas(['scan', FIXTURE]);
@@ -38,22 +38,84 @@ test('scan prints the repository, then each skill with its first sentence and pi
   );
 });
 
-test('./fixture: every skill, sorted by name, linked to its file, with a warning for the malformed one', () => {
+test('./fixture: project skills include copies, unusual folders and product resources, but not test data', () => {
   const root = pathToFileURL(FIXTURE).href;
   assert.equal(fixture.code, 0);
   assert.equal(
     fixture.stdout,
     [
-      'fixture · 3 skills',
+      'fixture · 6 skills',
       "code-style — Follow the project's code style.",
       `  ${root}/.github/skills/code-style/SKILL.md`,
       'commits — Write commit messages the way this repository does.',
       `  ${root}/.claude/skills/commits/SKILL.md`,
+      'mps-aspect-generator — Generate an MPS aspect in the shipped plugin.',
+      `  ${root}/plugins/mcp-tools/resources/skills/mps-aspect-generator/SKILL.md`,
+      'mps-tests — Run the MPS test suite.',
+      `  ${root}/.agents/skills/mps-tests/SKILL.md`,
+      '  also in .claude/skills/mps-tests/SKILL.md, .github/skills/mps-tests/SKILL.md, agent/skills/mps-tests/SKILL.md',
       'release-checklist',
       `  ${root}/.agents/skills/release-checklist/SKILL.md`,
+      'writing-lint-checks — Write lint checks for this repository.',
+      `  ${root}/agent/skills/writing-lint-checks/SKILL.md`,
     ].join('\n'),
   );
   assert.match(fixture.stderr, /^warning: \.agents\/skills\/release-checklist\/SKILL\.md: malformed front matter: /);
+});
+
+test('.agents metadata wins across copies in all four agent roots', () => {
+  assert.match(
+    fixture.stdout,
+    /mps-tests — Run the MPS test suite\.\n  .*\.agents\/skills\/mps-tests\/SKILL\.md\n  also in \.claude\/skills\/mps-tests\/SKILL\.md, \.github\/skills\/mps-tests\/SKILL\.md, agent\/skills\/mps-tests\/SKILL\.md/,
+  );
+  assert.doesNotMatch(fixture.stdout, /ignored-(?:claude|github|agent)-name|lower-priority/);
+});
+
+test('a skill in the unusual agent/skills folder is included', () => {
+  assert.match(fixture.stdout, /agent\/skills\/writing-lint-checks\/SKILL\.md/);
+});
+
+test('a skill shipped in product resources is included', () => {
+  assert.match(fixture.stdout, /plugins\/mcp-tools\/resources\/skills\/mps-aspect-generator\/SKILL\.md/);
+});
+
+test('a SKILL.md in test resources is not a project skill', () => {
+  assert.doesNotMatch(fixture.stdout, /weather-retrieval/);
+});
+
+test('a tokenless truncated GitHub tree still finds product resource skills', async () => {
+  const commit = '1111111111111111111111111111111111111111';
+  const github = replay({
+    'https://api.github.com/repos/JetBrains/truncated': {
+      status: 200,
+      body: { full_name: 'JetBrains/truncated', default_branch: 'main' },
+    },
+    'https://api.github.com/repos/JetBrains/truncated/commits/main': { status: 200, body: { sha: commit } },
+    [`https://api.github.com/repos/JetBrains/truncated/git/trees/${commit}?recursive=1`]: {
+      status: 200,
+      body: { truncated: true, tree: [] },
+    },
+    [`https://api.github.com/repos/JetBrains/truncated/git/trees/${commit}`]: {
+      status: 200,
+      body: { truncated: false, tree: [{ path: 'plugins', mode: '040000', type: 'tree', sha: 'plugins-tree' }] },
+    },
+    'https://api.github.com/repos/JetBrains/truncated/git/trees/plugins-tree?recursive=1': {
+      status: 200,
+      body: {
+        truncated: false,
+        tree: [{ path: 'resources/skills/product/SKILL.md', mode: '100644', type: 'blob', sha: 'skill-blob' }],
+      },
+    },
+    [`https://raw.githubusercontent.com/JetBrains/truncated/${commit}/plugins/resources/skills/product/SKILL.md`]: {
+      status: 200,
+      body: '---\nname: product\ndescription: A skill shipped with the product.\n---\n',
+    },
+  });
+
+  const result = await scan(await openGitHub('https://github.com/JetBrains/truncated', { fetch: github }));
+  assert.deepEqual(result.skills.map(({ name, path }) => ({ name, path })), [
+    { name: 'product', path: 'plugins/resources/skills/product/SKILL.md' },
+  ]);
 });
 
 test('the CLI prints the result at once and stores nothing', (t) => {
