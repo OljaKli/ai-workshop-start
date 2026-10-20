@@ -71,15 +71,14 @@
     /** `github.com/<organization>`: the same rule as the server's. */
     const isOrganization = (url) => /^(?:https?:\/\/)?(?:www\.)?github\.com\/[\w.-]+\/?$/i.test(url);
 
-    /** The API's answer, or undefined after showing its error in `target`. */
-    async function get(path, url, target) {
+    /** The API's answer or error; the caller owns when it may update the page. */
+    async function get(path, url) {
       try {
         const response = await fetch(`${path}?url=${encodeURIComponent(url)}`);
         const answer = await response.json();
-        if (response.ok) return answer;
-        show(answer.error, true, target);
+        return response.ok ? { answer } : { error: answer.error };
       } catch (error) {
-        show(`Cannot reach Skill Atlas: ${error.message}`, true, target);
+        return { error: `Cannot reach Skill Atlas: ${error.message}` };
       }
     }
 
@@ -110,16 +109,20 @@
       skills.replaceChildren();
       warnings.replaceChildren();
       show('Scanning…', false, target);
-      const answer = await get('api/scan', url, target);
-      if (answer && scan === latest) render(answer, target);
+      const result = await get('api/scan', url);
+      if (scan !== latest) return;
+      if ('error' in result) return show(result.error, true, target);
+      render(result.answer, target);
     }
 
     /** The organization's repositories on the left; the selected one's skills on the right. */
     async function scanOrganization(url) {
       const current = latest;
       show('Loading repositories…');
-      const answer = await get('api/organization', url, status);
-      if (!answer || current !== latest) return;
+      const result = await get('api/organization', url);
+      if (current !== latest) return;
+      if ('error' in result) return show(result.error, true);
+      const answer = result.answer;
       const summary = element('span');
       const count = answer.repositories.length;
       summary.append(element('a', answer.id, { href: answer.url }), ` · ${count} ${count === 1 ? 'repository' : 'repositories'}`);

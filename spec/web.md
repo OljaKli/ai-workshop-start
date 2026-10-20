@@ -19,7 +19,8 @@ URL goes into the address bar like a repository URL.
 States: `Loading repositories…` while the organization is listed, `Scanning…`
 while a repository is scanned; `· 0 repositories` (no list) for an empty
 organization; GitHub errors in red, for the organization above the list, for a
-repository on the right, with the list kept.
+repository on the right, with the list kept. A late answer from an earlier scan
+never replaces the current selection's status or results.
 ## API
 `GET /api/scan?url=<GitHub URL>` answers JSON:
 - 200: `{ repository: { id, url, commit }, skills: [{ id, name, description,

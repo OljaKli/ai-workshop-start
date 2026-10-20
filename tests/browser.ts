@@ -194,6 +194,24 @@ test('an organization repository without skills, or one GitHub cannot scan, says
   await page.close();
 });
 
+test('a late error from an earlier repository does not replace the selected repository status', async () => {
+  const page = await scanOrganization('github.com/JetBrains');
+  await page.route('**/api/scan?*', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('url')?.endsWith('/gone')) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await route.continue();
+  });
+
+  await page.locator('#repositories button', { hasText: /^gone$/ }).click();
+  await select(page, 'web');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  assert.equal(await page.textContent('#repository-status'), `JetBrains/web · 3 skills at ${commit.slice(0, 7)}`);
+  assert.deepEqual(await page.locator('#skills h2').allTextContents(), ['broken', 'html', 'tests']);
+  await page.close();
+});
+
 test('an organization without repositories, or one GitHub cannot list, says so', async () => {
   const quiet = await scanOrganization('github.com/quiet');
   assert.equal(await quiet.textContent('#status'), 'quiet · 0 repositories');
