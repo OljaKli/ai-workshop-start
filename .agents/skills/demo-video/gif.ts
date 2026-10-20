@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import gifenc from 'gifenc';
 import { chromium, type Browser } from 'playwright';
 
@@ -85,7 +86,8 @@ export async function toGif(browser: Browser, webm: string, gif: string, { fps =
   }
 }
 
-if (import.meta.main) {
+// Not `import.meta.main`: Node has it only from 24.2, and `engines` allows 24.0.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const webm = resolve(process.argv[2] ?? new URL('../../../docs/demo/skill-atlas.webm', import.meta.url).pathname);
   const gif = resolve(process.argv[3] ?? webm.replace(/\.webm$/, '.gif'));
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
