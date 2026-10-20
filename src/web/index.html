@@ -18,6 +18,8 @@
     #repositories { margin: 0; border-right: 1px solid var(--line); max-height: 80vh; overflow-y: auto; }
     #repositories button { display: block; width: 100%; text-align: left; background: none; color: inherit; padding: .375rem .5rem; overflow-wrap: anywhere; }
     #repositories button[aria-current="true"] { background: var(--accent); color: white; }
+    #filter { width: 100%; box-sizing: border-box; margin-top: 1rem; }
+    #no-match { color: var(--muted); }
     ul { list-style: none; padding: 0; }
     #skills li { padding: .75rem 0; border-top: 1px solid var(--line); }
     #skills h2 { font-size: 1.05rem; margin: 0; }
@@ -39,7 +41,9 @@
     <ul id="repositories" aria-label="Repositories" hidden></ul>
     <section>
       <div id="repository-status" role="status" hidden></div>
+      <input id="filter" type="search" hidden placeholder="Filter by name, description or path" aria-label="Filter skills">
       <ul id="skills"></ul>
+      <div id="no-match" hidden></div>
       <ul id="warnings"></ul>
     </section>
   </main>
@@ -53,6 +57,8 @@
     const main = document.querySelector('main');
     const repositories = document.querySelector('#repositories');
     const repositoryStatus = document.querySelector('#repository-status');
+    const filter = document.querySelector('#filter');
+    const noMatch = document.querySelector('#no-match');
     /** The latest scan; an older answer that arrives later is dropped. */
     let latest = 0;
 
@@ -66,6 +72,26 @@
     function show(message, isError = false, target = status) {
       target.className = isError ? 'error' : '';
       target.replaceChildren(message);
+    }
+
+    /** Shows only the scanned skills whose name, description or path contains the filter, ignoring case. */
+    function applyFilter() {
+      const query = filter.value.trim().replace(/\s+/g, ' ').toLowerCase();
+      let shown = 0;
+      for (const item of skills.children) {
+        item.hidden = !item.dataset.text.includes(query);
+        if (!item.hidden) shown++;
+      }
+      noMatch.hidden = shown > 0 || skills.children.length === 0;
+      noMatch.textContent = `No skills match “${filter.value.trim()}”.`;
+    }
+
+    function clearResults() {
+      skills.replaceChildren();
+      warnings.replaceChildren();
+      filter.value = '';
+      filter.hidden = true;
+      noMatch.hidden = true;
     }
 
     /** `github.com/<organization>`: the same rule as the server's. */
@@ -84,8 +110,7 @@
 
     function clear() {
       latest++;
-      skills.replaceChildren();
-      warnings.replaceChildren();
+      clearResults();
       repositories.replaceChildren();
       repositories.hidden = true;
       repositoryStatus.hidden = true;
@@ -106,8 +131,7 @@
     /** The repository's skills, with its summary in `target`. */
     async function scanRepository(url, target) {
       const scan = ++latest;
-      skills.replaceChildren();
-      warnings.replaceChildren();
+      clearResults();
       show('Scanning…', false, target);
       const result = await get('api/scan', url);
       if (scan !== latest) return;
@@ -155,6 +179,10 @@
       if (found.length === 0) skills.append(element('li', `No skills in ${repository.id}.`, { className: 'meta' }));
       for (const skill of found) {
         const item = element('li');
+        item.dataset.text = [skill.name, skill.description, skill.path]
+          .map((text) => text.trim().replace(/\s+/g, ' '))
+          .join('\0')
+          .toLowerCase();
         const title = element('h2');
         title.append(element('a', skill.name, { href: skill.link }));
         item.append(title);
@@ -164,7 +192,10 @@
         skills.append(item);
       }
       for (const note of notes) warnings.append(element('li', `warning: ${note}`));
+      filter.hidden = found.length === 0;
     }
+
+    filter.addEventListener('input', applyFilter);
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();

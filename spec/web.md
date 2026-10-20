@@ -7,9 +7,17 @@ Like the CLI, a *thin client* over the core; *nothing is stored*.
 `GET /`: paste a **GitHub repository** URL (optionally `/tree/<commit>`), press
 *Scan*. The page shows `<owner>/<repo> · N skills`, then each skill's **name**
 (linked to its pinned SKILL.md), full **description**, path and `also in`
-copies, then the warnings. When a repository has no skills, the page says so. The
-scanned URL goes into the address bar as `?url=<GitHub URL>`, and opening such an
-address scans it at once.
+copies, then the warnings. When a repository has no skills, the page says so.
+The scanned URL goes into the address bar as `?url=<GitHub URL>`, and opening
+such an address scans it at once.
+
+Once a scan finds skills, a filter field shows above them. Typing narrows the
+displayed skills, *case-insensitively*, to those whose name, description or
+path contains the text. Whitespace is matched as users see it in the page, so
+words across a line break are separated by one space. When none match, the page
+says so. Clearing the field shows every scanned skill again, *without
+rescanning* GitHub.
+
 ### Organization
 Paste a **GitHub organization** URL, `https://github.com/<organization>`, instead:
 the page shows `<organization> · N repositories`, then the repositories, sorted by
@@ -40,5 +48,6 @@ never replaces the current selection's status or results.
 ## Browser proof
 `npm run test:browser` drives the page in headless Chromium with recorded GitHub
 answers: scan, `also in`, warnings, HTML in a description shown as text, the
-`?url=` address, and error messages; for an organization, the list on the left,
-a selected repository's skills on the right, and the loading, empty and error states.
+`?url=` address, error messages, and the filter: matching, no matches, clearing;
+for an organization, the list on the left, a selected repository's skills on
+the right, and the loading, empty and error states.
