@@ -5,7 +5,7 @@ or a local directory
 ## Output
 Every project skill: **name**, **description**, **link**
 ## Architecture
-Core: fetch → find → parse. CLI: a *thin client*.
+Core: fetch → find → parse. CLI and web: *thin clients*.
 Skill: id = `repo:path`, name, description, commit
 ## Project skill
 A project skill is an exact, case-sensitive `SKILL.md`, except under a test
