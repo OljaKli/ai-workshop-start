@@ -15,11 +15,12 @@ build-tools-bump-gradle-api — Bumps the Gradle API version that Kotlin Gradle 
 
 Or in the browser: `./skill-atlas serve` opens http://localhost:3000, where you paste a
 GitHub repository URL and press *Scan*, or an organization URL to browse its
-repositories one by one ([spec/web.md](spec/web.md)). A 35-second video of both,
-the filter and an organization: [docs/demo/skill-atlas.webm](docs/demo/skill-atlas.webm)
+repositories one by one ([spec/web.md](spec/web.md)); with `GITHUB_TOKEN`, each
+skill shows when it was last updated. A 43-second video of the filter, an
+organization and the dates: [docs/demo/skill-atlas.webm](docs/demo/skill-atlas.webm)
 (`npm run demo` records it again, with its GIF).
 
-![Skill Atlas: the filter, then an organization](docs/demo/skill-atlas.gif)
+![Skill Atlas: the filter, an organization, then the dates](docs/demo/skill-atlas.gif)
 
 Set `GITHUB_TOKEN` for a higher GitHub rate limit. `npm test` runs the offline
 tests; `npm run test:browser` drives the web page in headless Chromium (once:

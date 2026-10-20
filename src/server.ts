@@ -17,7 +17,7 @@ export type WebOptions = {
 /** What `GET /api/scan?url=<GitHub URL>` answers. */
 export type ScanAnswer = {
   repository: { id: string; url: string; commit: string };
-  skills: { id: string; name: string; description: string; path: string; link: string; copies: string[] }[];
+  skills: { id: string; name: string; description: string; path: string; link: string; copies: string[]; updated: string | null }[];
   warnings: string[];
 };
 
@@ -50,7 +50,7 @@ export function createWebServer(options: WebOptions): Server {
 async function scanAnswer(input: string, options: WebOptions): Promise<[number, ScanAnswer | { error: string }]> {
   if (!parseGitHubUrl(input)) return [400, { error: `Not a GitHub repository URL: ${input}` }];
   try {
-    const { repository, skills, warnings } = await scan(await openGitHub(input, options));
+    const { repository, skills, warnings } = await scan(await openGitHub(input, options), { updated: true });
     return [
       200,
       {
@@ -62,6 +62,7 @@ async function scanAnswer(input: string, options: WebOptions): Promise<[number, 
           path: skill.path,
           link: skillLink(repository, skill),
           copies: skill.copies,
+          updated: skill.updated ?? null,
         })),
         warnings,
       },

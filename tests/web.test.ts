@@ -10,7 +10,7 @@ import { createInterface } from 'node:readline';
 import { after, test } from 'node:test';
 import { replay, type Recording } from '../src/core/replay.ts';
 import { createWebServer, type OrganizationAnswer, type ScanAnswer } from '../src/server.ts';
-import { CLI, EXAMPLE_COMMIT, FIXTURE, github } from './helpers.ts';
+import { CLI, EXAMPLE_COMMIT, EXAMPLE_UPDATED, FIXTURE, github } from './helpers.ts';
 
 const server = createWebServer({ fetch: github, token: 'test' });
 await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -20,8 +20,8 @@ const base = `http://localhost:${(server.address() as AddressInfo).port}`;
 const scanUrl = (url: string) => fetch(`${base}/api/scan?url=${encodeURIComponent(url)}`);
 
 /** The API's answer for a URL, with GitHub answering from a recording instead. */
-async function scanRecorded(recording: Recording, url: string): Promise<ScanAnswer> {
-  const other = createWebServer({ fetch: replay(recording) });
+async function scanRecorded(recording: Recording, url: string, token?: string): Promise<ScanAnswer> {
+  const other = createWebServer({ fetch: replay(recording), token });
   await new Promise<void>((resolve) => other.listen(0, resolve));
   try {
     const port = (other.address() as AddressInfo).port;
@@ -63,10 +63,84 @@ test('the API answers the repository and each skill with its full description an
         path: '.claude/skills/commits/SKILL.md',
         link: `https://github.com/JetBrains/example/blob/${EXAMPLE_COMMIT}/.claude/skills/commits/SKILL.md`,
         copies: [],
+        updated: EXAMPLE_UPDATED,
       },
     ],
     warnings: [],
   });
+});
+
+const dated = (commit: string, paths: string[]) => ({
+  'https://api.github.com/repos/JetBrains/dated': { status: 200, body: { full_name: 'JetBrains/dated', default_branch: 'main' } },
+  'https://api.github.com/repos/JetBrains/dated/commits/main': { status: 200, body: { sha: commit } },
+  'https://api.github.com/search/code?q=filename:SKILL.md+repo:JetBrains/dated&per_page=100&page=1': {
+    status: 200,
+    body: { total_count: paths.length, items: paths.map((path) => ({ path })) },
+  },
+  [`https://api.github.com/repos/JetBrains/dated/git/trees/${commit}?recursive=1`]: { status: 200, body: blobs(paths) },
+  ...Object.fromEntries(
+    paths.map((path) => [`https://raw.githubusercontent.com/JetBrains/dated/${commit}/${path}`, { status: 200, body: `---\nname: ${path.split('/')[0]}\n---\n` }]),
+  ),
+});
+const commits = (commit: string, path: string) =>
+  `https://api.github.com/repos/JetBrains/dated/commits?sha=${commit}&path=${encodeURIComponent(path)}&per_page=1`;
+
+test('updated: the UTC date of the last commit that changed the SKILL.md, up to the scanned commit', async () => {
+  const commit = '7777777777777777777777777777777777777777';
+  const answer = await scanRecorded(
+    {
+      ...dated(commit, ['late/SKILL.md', 'plain/SKILL.md']),
+      // 01:30 in UTC+2 is the day before in UTC.
+      [commits(commit, 'late/SKILL.md')]: { status: 200, body: [{ commit: { committer: { date: '2026-03-01T01:30:00+02:00' } } }] },
+      [commits(commit, 'plain/SKILL.md')]: { status: 200, body: [{ commit: { committer: { date: '2025-12-31T23:59:59Z' } } }] },
+    },
+    'github.com/JetBrains/dated',
+    'test',
+  );
+  assert.deepEqual(
+    answer.skills.map(({ name, updated }) => ({ name, updated })),
+    [
+      { name: 'late', updated: '2026-02-28' },
+      { name: 'plain', updated: '2025-12-31' },
+    ],
+  );
+  assert.deepEqual(answer.warnings, []);
+});
+
+test('updated without a token: null for every skill, no warning, no extra request', async () => {
+  const commit = '7777777777777777777777777777777777777777';
+  // Not recording the commits answers proves they are not asked for: a request would fail.
+  const answer = await scanRecorded(dated(commit, ['plain/SKILL.md']), 'github.com/JetBrains/dated');
+  assert.deepEqual(
+    answer.skills.map(({ name, updated }) => ({ name, updated })),
+    [{ name: 'plain', updated: null }],
+  );
+  assert.deepEqual(answer.warnings, []);
+});
+
+test('updated GitHub cannot tell → null for those skills, one warning, the scan still succeeds', async () => {
+  const commit = '7777777777777777777777777777777777777777';
+  const answer = await scanRecorded(
+    {
+      ...dated(commit, ['empty/SKILL.md', 'failed/SKILL.md', 'known/SKILL.md', 'unreachable/SKILL.md']),
+      [commits(commit, 'empty/SKILL.md')]: { status: 200, body: [] },
+      [commits(commit, 'failed/SKILL.md')]: { status: 500, body: { message: 'Server Error' } },
+      [commits(commit, 'known/SKILL.md')]: { status: 200, body: [{ commit: { committer: { date: '2026-01-02T00:00:00Z' } } }] },
+      // unreachable/SKILL.md: not recorded, so the request fails as if GitHub were unreachable.
+    },
+    'github.com/JetBrains/dated',
+    'test',
+  );
+  assert.deepEqual(
+    answer.skills.map(({ name, updated }) => ({ name, updated })),
+    [
+      { name: 'empty', updated: null },
+      { name: 'failed', updated: null },
+      { name: 'known', updated: '2026-01-02' },
+      { name: 'unreachable', updated: null },
+    ],
+  );
+  assert.deepEqual(answer.warnings, ['GitHub could not tell when 3 skills last changed; shown without a date']);
 });
 
 test('copies and warnings reach the page, skills sorted by name', async () => {

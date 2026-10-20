@@ -11,24 +11,43 @@ export type Source = {
   warnings: string[];
   /** The file's bytes, or undefined if it is not there. */
   read(path: string): Promise<Uint8Array | undefined>;
+  /** When the file last changed, `YYYY-MM-DD` in UTC, or undefined; only where the source can tell. */
+  updated?(path: string): Promise<string | undefined>;
+};
+
+export type ScanOptions = {
+  /** Also looks up when each skill last changed, if the source can tell. */
+  updated?: boolean;
 };
 
 export type ScanResult = { repository: Repository; skills: Skill[]; warnings: string[] };
 
 /** fetch → find → parse. Nothing is stored: the result is all there is. */
-export async function scan(source: Source): Promise<ScanResult> {
+export async function scan(source: Source, options: ScanOptions = {}): Promise<ScanResult> {
   const files = findSkills(source.paths, source.repository.name);
+  const updated = options.updated ? source.updated?.bind(source) : undefined;
   // The files are read at the same time: on GitHub, each one is a request.
-  const results = await Promise.all(files.map((file) => readSkill(source, file)));
+  const results = await Promise.all(files.map((file) => readSkill(source, file, updated)));
+  const skills = sortSkills(results.flatMap((result) => (result.skill ? [result.skill] : [])));
+  const unknown = updated ? skills.filter((skill) => !skill.updated).length : 0;
   return {
     repository: source.repository,
-    skills: sortSkills(results.flatMap((result) => (result.skill ? [result.skill] : []))),
-    warnings: [...source.warnings, ...results.flatMap((result) => (result.warning ? [result.warning] : []))],
+    skills,
+    warnings: [
+      ...source.warnings,
+      ...results.flatMap((result) => (result.warning ? [result.warning] : [])),
+      ...(unknown > 0 ? [`GitHub could not tell when ${unknown} ${unknown === 1 ? 'skill' : 'skills'} last changed; shown without a date`] : []),
+    ],
   };
 }
 
-async function readSkill(source: Source, file: SkillFile): Promise<{ skill?: Skill; warning?: string }> {
-  const bytes = await source.read(file.path);
+async function readSkill(
+  source: Source,
+  file: SkillFile,
+  updated?: (path: string) => Promise<string | undefined>,
+): Promise<{ skill?: Skill; warning?: string }> {
+  // A date GitHub cannot give is a missing date, never a failed scan.
+  const [bytes, date] = await Promise.all([source.read(file.path), updated?.(file.path).catch(() => undefined)]);
   if (!bytes) return { warning: `${file.path}: listed, but not found at the scanned commit; skipped` };
   const parsed = parseSkill(new TextDecoder().decode(bytes));
   const skill: Skill = {
@@ -39,6 +58,7 @@ async function readSkill(source: Source, file: SkillFile): Promise<{ skill?: Ski
     description: parsed.description,
     commit: source.repository.commit,
     copies: file.copies,
+    ...(date && { updated: date }),
   };
   return { skill, warning: parsed.warning && `${file.path}: ${parsed.warning}` };
 }

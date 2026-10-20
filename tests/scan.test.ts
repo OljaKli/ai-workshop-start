@@ -7,11 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
+import { run } from '../src/commands.ts';
 import { openGitHub, type Fetch } from '../src/core/github.ts';
 import { parseSkill } from '../src/core/parse.ts';
 import { replay } from '../src/core/replay.ts';
 import { scan } from '../src/core/scan.ts';
-import { atlas, CLI, EXAMPLE_COMMIT, FIXTURE } from './helpers.ts';
+import { atlas, CLI, EXAMPLE_COMMIT, FIXTURE, github } from './helpers.ts';
 
 const fixture = await atlas(['scan', FIXTURE]);
 const example = await atlas(['scan', 'github.com/JetBrains/example']);
@@ -36,6 +37,22 @@ test('scan prints the repository, then each skill with its first sentence and pi
       `  https://github.com/JetBrains/example/blob/${EXAMPLE_COMMIT}/.claude/skills/commits/SKILL.md`,
     ].join('\n'),
   );
+});
+
+test('the CLI does not look up when skills last changed, even with a token: its output is unchanged', async () => {
+  const requests: string[] = [];
+  const counting: Fetch = (url, init) => (requests.push(url), github(url, init));
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const code = await run(['scan', 'github.com/JetBrains/example'], {
+    open: (input) => openGitHub(input, { fetch: counting, token: 'test' }),
+    print: (text) => stdout.push(text),
+    error: (text) => stderr.push(text),
+  });
+  assert.equal(code, 0);
+  assert.equal(stdout.join('\n'), example.stdout);
+  assert.deepEqual(stderr, []);
+  assert.deepEqual(requests.filter((url) => url.includes('/commits?')), []);
 });
 
 test('a /tree/<commit> URL scans exactly that commit', async () => {

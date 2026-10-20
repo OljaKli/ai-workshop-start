@@ -11,6 +11,9 @@ export const CLI = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 /** The commit GitHub answers for JetBrains/example. */
 export const EXAMPLE_COMMIT = '5ab6270ab772d113e8ad52ebfcaa0109c522ae00';
 
+/** When JetBrains/example's only SKILL.md last changed, as of EXAMPLE_COMMIT. */
+export const EXAMPLE_UPDATED = '2026-09-14';
+
 /** What GitHub answers for a small repository, JetBrains/example, with one skill. */
 const EXAMPLE: Recording = {
   'https://api.github.com/repos/JetBrains/example': { status: 200, body: { full_name: 'JetBrains/example', default_branch: 'main' } },
@@ -22,6 +25,10 @@ const EXAMPLE: Recording = {
   [`https://raw.githubusercontent.com/JetBrains/example/${EXAMPLE_COMMIT}/.claude/skills/commits/SKILL.md`]: {
     status: 200,
     body: '---\nname: commits\ndescription: Write commit messages the way this repository does. Use for every commit.\n---\n# Commits\n',
+  },
+  [`https://api.github.com/repos/JetBrains/example/commits?sha=${EXAMPLE_COMMIT}&path=.claude%2Fskills%2Fcommits%2FSKILL.md&per_page=1`]: {
+    status: 200,
+    body: [{ sha: EXAMPLE_COMMIT, commit: { committer: { date: `${EXAMPLE_UPDATED}T08:00:00Z` } } }],
   },
 };
 

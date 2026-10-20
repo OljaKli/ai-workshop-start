@@ -8,7 +8,7 @@
     :root { color-scheme: light dark; --muted: #6b7280; --line: #d1d5db55; --accent: #2563eb; --error: #dc2626; }
     body { font: 16px/1.5 system-ui, sans-serif; max-width: 64rem; margin: 3rem auto; padding: 0 1rem; }
     h1 { margin: 0 0 .25rem; }
-    .tagline, .meta, .path, .copies { color: var(--muted); }
+    .tagline, .meta, .path, .copies, .updated { color: var(--muted); }
     form { display: flex; gap: .5rem; margin: 1.5rem 0; }
     input { flex: 1; font: inherit; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: .375rem; }
     button { font: inherit; padding: .5rem 1rem; border: 0; border-radius: .375rem; background: var(--accent); color: white; cursor: pointer; }
@@ -24,7 +24,7 @@
     #skills li { padding: .75rem 0; border-top: 1px solid var(--line); }
     #skills h2 { font-size: 1.05rem; margin: 0; }
     #skills p { margin: .25rem 0; }
-    .path, .copies { font-size: .85rem; overflow-wrap: anywhere; }
+    .path, .copies, .updated { font-size: .85rem; overflow-wrap: anywhere; }
     #warnings li { color: var(--muted); font-size: .85rem; }
     a { color: var(--accent); }
   </style>
@@ -189,6 +189,7 @@
         if (skill.description) item.append(element('p', skill.description));
         item.append(element('div', skill.path, { className: 'path' }));
         if (skill.copies.length > 0) item.append(element('div', `also in ${skill.copies.join(', ')}`, { className: 'copies' }));
+        if (skill.updated) item.append(element('div', `updated ${skill.updated}`, { className: 'updated' }));
         skills.append(item);
       }
       for (const note of notes) warnings.append(element('li', `warning: ${note}`));

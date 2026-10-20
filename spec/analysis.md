@@ -6,7 +6,8 @@ or a local directory
 Every project skill: **name**, **description**, **link**
 ## Architecture
 Core: fetch → find → parse. CLI and web: *thin clients*.
-Skill: id = `repo:path`, name, description, commit
+Skill: id = `repo:path`, name, description, commit; on request, with a token,
+the date its SKILL.md last changed (web only, [web.md](web.md#last-updated))
 ## Project skill
 A project skill is an exact, case-sensitive `SKILL.md`, except under a test
 resources source set (`src/<...Test>/resources`).

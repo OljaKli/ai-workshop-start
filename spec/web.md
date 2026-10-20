@@ -7,7 +7,16 @@ Like the CLI, a *thin client* over the core; *nothing is stored*.
 `GET /`: paste a **GitHub repository** URL (optionally `/tree/<commit>`), press
 *Scan*. The page shows `<owner>/<repo> · N skills`, then each skill's **name**
 (linked to its pinned SKILL.md), full **description**, path and `also in`
-copies, then the warnings. When a repository has no skills, the page says so.
+copies, and `updated YYYY-MM-DD`, then the warnings. When a repository has no
+skills, the page says so.
+
+### Last updated
+Each skill shows the date its SKILL.md last changed, as of the scanned commit,
+in UTC: `updated YYYY-MM-DD`. The date needs `GITHUB_TOKEN` on the server, like
+code search: one GitHub request per skill. Without a token no date is shown and
+nothing else changes. When GitHub cannot tell for some skills, those skills show
+no date and one warning says how many; the scan still succeeds. The filter does
+not match the date; the CLI does not look it up, and its output is unchanged.
 The scanned URL goes into the address bar as `?url=<GitHub URL>`, and opening
 such an address scans it at once.
 
@@ -32,7 +41,8 @@ never replaces the current selection's status or results.
 ## API
 `GET /api/scan?url=<GitHub URL>` answers JSON:
 - 200: `{ repository: { id, url, commit }, skills: [{ id, name, description,
-  path, link, copies }], warnings }`, skills sorted by **name**
+  path, link, copies, updated }], warnings }`, skills sorted by **name**;
+  `updated` is `YYYY-MM-DD` or `null` when not known
 - 400 `{ error }`: not a GitHub repository URL; *local directories are refused*
 - 502 `{ error }`: GitHub cannot be scanned (not found, unreachable, rate limit),
   with the CLI's message
@@ -48,11 +58,13 @@ never replaces the current selection's status or results.
 ## Browser proof
 `npm run test:browser` drives the page in headless Chromium with recorded GitHub
 answers: scan, `also in`, warnings, HTML in a description shown as text, the
-`?url=` address, error messages, and the filter: matching, no matches, clearing;
+`?url=` address, error messages, the `updated` dates: shown, no token, a failed
+lookup, and the filter: matching, no matches, clearing;
 for an organization, the list on the left, a selected repository's skills on
 the right, and the loading, empty and error states.
 ## Demo
 `npm run demo` records the page, with recorded answers from the JetBrains
 snapshots, into `docs/demo/skill-atlas.webm` and a GIF of it, `skill-atlas.gif`: the filter on JetBrains/MPS, then
-the JetBrains organization, one repository at a time
+the JetBrains organization, one repository at a time, then the `updated` dates
+on JetBrains/android
 ([demo-video](../.agents/skills/demo-video/SKILL.md)).
