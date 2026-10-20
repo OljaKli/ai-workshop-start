@@ -6,14 +6,18 @@
   <title>Skill Atlas</title>
   <style>
     :root { color-scheme: light dark; --muted: #6b7280; --line: #d1d5db55; --accent: #2563eb; --error: #dc2626; }
-    body { font: 16px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 3rem auto; padding: 0 1rem; }
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 64rem; margin: 3rem auto; padding: 0 1rem; }
     h1 { margin: 0 0 .25rem; }
     .tagline, .meta, .path, .copies { color: var(--muted); }
     form { display: flex; gap: .5rem; margin: 1.5rem 0; }
     input { flex: 1; font: inherit; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: .375rem; }
     button { font: inherit; padding: .5rem 1rem; border: 0; border-radius: .375rem; background: var(--accent); color: white; cursor: pointer; }
     button:disabled { opacity: .6; cursor: progress; }
-    #status.error { color: var(--error); }
+    #status.error, #repository-status.error { color: var(--error); }
+    main.organization { display: grid; margin-top: .75rem; grid-template-columns: minmax(10rem, 16rem) 1fr; gap: 1.5rem; align-items: start; }
+    #repositories { margin: 0; border-right: 1px solid var(--line); max-height: 80vh; overflow-y: auto; }
+    #repositories button { display: block; width: 100%; text-align: left; background: none; color: inherit; padding: .375rem .5rem; overflow-wrap: anywhere; }
+    #repositories button[aria-current="true"] { background: var(--accent); color: white; }
     ul { list-style: none; padding: 0; }
     #skills li { padding: .75rem 0; border-top: 1px solid var(--line); }
     #skills h2 { font-size: 1.05rem; margin: 0; }
@@ -25,14 +29,20 @@
 </head>
 <body>
   <h1>Skill Atlas</h1>
-  <div class="tagline">Every agent skill in a GitHub repository.</div>
+  <div class="tagline">Every agent skill in a GitHub repository or organization.</div>
   <form>
-    <input name="url" type="text" required autofocus placeholder="https://github.com/JetBrains/kotlin" aria-label="GitHub repository URL">
+    <input name="url" type="text" required autofocus placeholder="https://github.com/JetBrains/kotlin" aria-label="GitHub repository or organization URL">
     <button type="submit">Scan</button>
   </form>
   <div id="status" role="status"></div>
-  <ul id="skills"></ul>
-  <ul id="warnings"></ul>
+  <main>
+    <ul id="repositories" aria-label="Repositories" hidden></ul>
+    <section>
+      <div id="repository-status" role="status" hidden></div>
+      <ul id="skills"></ul>
+      <ul id="warnings"></ul>
+    </section>
+  </main>
   <script type="module">
     const form = document.querySelector('form');
     const input = form.elements.url;
@@ -40,6 +50,11 @@
     const status = document.querySelector('#status');
     const skills = document.querySelector('#skills');
     const warnings = document.querySelector('#warnings');
+    const main = document.querySelector('main');
+    const repositories = document.querySelector('#repositories');
+    const repositoryStatus = document.querySelector('#repository-status');
+    /** The latest scan; an older answer that arrives later is dropped. */
+    let latest = 0;
 
     /** An element with text content only: what GitHub returns is never parsed as HTML. */
     function element(tag, text, attributes = {}) {
@@ -48,36 +63,93 @@
       return node;
     }
 
-    function show(message, isError = false) {
-      status.className = isError ? 'error' : '';
-      status.replaceChildren(message);
+    function show(message, isError = false, target = status) {
+      target.className = isError ? 'error' : '';
+      target.replaceChildren(message);
     }
 
-    async function scanRepository(url) {
+    /** `github.com/<organization>`: the same rule as the server's. */
+    const isOrganization = (url) => /^(?:https?:\/\/)?(?:www\.)?github\.com\/[\w.-]+\/?$/i.test(url);
+
+    /** The API's answer, or undefined after showing its error in `target`. */
+    async function get(path, url, target) {
+      try {
+        const response = await fetch(`${path}?url=${encodeURIComponent(url)}`);
+        const answer = await response.json();
+        if (response.ok) return answer;
+        show(answer.error, true, target);
+      } catch (error) {
+        show(`Cannot reach Skill Atlas: ${error.message}`, true, target);
+      }
+    }
+
+    function clear() {
+      latest++;
       skills.replaceChildren();
       warnings.replaceChildren();
-      show('Scanning…');
+      repositories.replaceChildren();
+      repositories.hidden = true;
+      repositoryStatus.hidden = true;
+      main.className = '';
+    }
+
+    async function open(url) {
+      clear();
       button.disabled = true;
       try {
-        const response = await fetch(`api/scan?url=${encodeURIComponent(url)}`);
-        const answer = await response.json();
-        if (!response.ok) return show(answer.error, true);
-        render(answer);
-      } catch (error) {
-        show(`Cannot reach Skill Atlas: ${error.message}`, true);
+        if (isOrganization(url)) await scanOrganization(url);
+        else await scanRepository(url, status);
       } finally {
         button.disabled = false;
       }
     }
 
-    function render({ repository, skills: found, warnings: notes }) {
+    /** The repository's skills, with its summary in `target`. */
+    async function scanRepository(url, target) {
+      const scan = ++latest;
+      skills.replaceChildren();
+      warnings.replaceChildren();
+      show('Scanning…', false, target);
+      const answer = await get('api/scan', url, target);
+      if (answer && scan === latest) render(answer, target);
+    }
+
+    /** The organization's repositories on the left; the selected one's skills on the right. */
+    async function scanOrganization(url) {
+      const current = latest;
+      show('Loading repositories…');
+      const answer = await get('api/organization', url, status);
+      if (!answer || current !== latest) return;
+      const summary = element('span');
+      const count = answer.repositories.length;
+      summary.append(element('a', answer.id, { href: answer.url }), ` · ${count} ${count === 1 ? 'repository' : 'repositories'}`);
+      show(summary);
+      if (count === 0) return;
+      main.className = 'organization';
+      repositories.hidden = false;
+      repositoryStatus.hidden = false;
+      show('Select a repository to see its skills.', false, repositoryStatus);
+      for (const repository of answer.repositories) {
+        const choice = element('button', repository.name, { type: 'button', title: repository.description || repository.id });
+        choice.addEventListener('click', () => {
+          for (const other of repositories.querySelectorAll('button')) other.setAttribute('aria-current', String(other === choice));
+          scanRepository(repository.url, repositoryStatus);
+        });
+        const item = element('li');
+        item.append(choice);
+        repositories.append(item);
+      }
+    }
+
+    function render({ repository, skills: found, warnings: notes }, target) {
       const summary = element('span');
       summary.append(
         element('a', repository.id, { href: repository.url }),
         ` · ${found.length} ${found.length === 1 ? 'skill' : 'skills'}`,
         element('span', ` at ${repository.commit.slice(0, 7)}`, { className: 'meta' }),
       );
-      show(summary);
+      show(summary, false, target);
+      if (found.length === 0) skills.append(element('li', `No skills in ${repository.id}.`, { className: 'meta' }));
       for (const skill of found) {
         const item = element('li');
         const title = element('h2');
@@ -96,12 +168,12 @@
       const url = input.value.trim();
       // The scanned URL stays in the address bar, so a scan can be shared.
       history.pushState(null, '', `?url=${encodeURIComponent(url)}`);
-      scanRepository(url);
+      open(url);
     });
 
     function fromAddress() {
       const url = new URLSearchParams(location.search).get('url');
-      if (url) { input.value = url; scanRepository(url); }
+      if (url) { input.value = url; open(url); }
     }
     addEventListener('popstate', fromAddress);
     fromAddress();

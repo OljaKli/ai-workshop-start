@@ -14,7 +14,8 @@ build-tools-bump-gradle-api — Bumps the Gradle API version that Kotlin Gradle 
 ```
 
 Or in the browser: `./skill-atlas serve` opens http://localhost:3000, where you paste a
-GitHub URL and press *Scan* ([spec/web.md](spec/web.md)).
+GitHub repository URL and press *Scan*, or an organization URL to browse its
+repositories one by one ([spec/web.md](spec/web.md)).
 
 Set `GITHUB_TOKEN` for a higher GitHub rate limit. `npm test` runs the offline
 tests; `npm run test:browser` drives the web page in headless Chromium (once:
