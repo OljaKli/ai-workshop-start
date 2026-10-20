@@ -7,12 +7,13 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 type Attachment = { name: string; path?: string };
 type Suite = { suites?: Suite[]; specs?: { title: string; tags: string[]; tests: { results: { status: string; attachments: Attachment[] }[] }[] }[] };
 
-const baselines = new URL('../spec/screenshots/', import.meta.url).pathname;
+const baselines = fileURLToPath(new URL('../spec/screenshots/', import.meta.url));
 
 /** Each changed screenshot of a failed test: its name and its files, relative to test-results. */
 function changed(results: string) {
@@ -37,7 +38,7 @@ function changed(results: string) {
 }
 
 const { positionals, values } = parseArgs({ allowPositionals: true, options: { local: { type: 'boolean' } } });
-const local = new URL('../test-results/', import.meta.url).pathname;
+const local = fileURLToPath(new URL('../test-results/', import.meta.url));
 
 if (positionals[0] === 'summary') {
   const shots = existsSync(join(local, 'report.json')) ? changed(local) : new Map();
