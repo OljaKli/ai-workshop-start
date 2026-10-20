@@ -76,7 +76,7 @@
 
     /** Shows only the scanned skills whose name, description or path contains the filter, ignoring case. */
     function applyFilter() {
-      const query = filter.value.trim().replace(/\s+/g, ' ');
+      const query = filter.value.trim().replace(/\s+/g, ' ').toLowerCase();
       let shown = 0;
       for (const item of skills.children) {
         item.hidden = !item.dataset.text.includes(query);
