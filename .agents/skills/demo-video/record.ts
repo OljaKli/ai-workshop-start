@@ -1,5 +1,5 @@
 // Records the demo cases into one video: `node .agents/skills/demo-video/record.ts [case…] [--out <file.webm>]`.
-// No case: every case, into docs/demo/skill-atlas.webm. CHROMIUM_PATH points at another Chromium build.
+// No case: every case, into docs/demo/skill-atlas.webm; a GIF of it beside, for the pull request. CHROMIUM_PATH points at another Chromium build.
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 import { createWebServer } from '../../../src/server.ts';
 import { caption, cases } from './cases.ts';
+import { toGif } from './gif.ts';
 import { github } from './github.ts';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: { out: { type: 'string' } } });
@@ -34,6 +35,9 @@ try {
   mkdirSync(dirname(out), { recursive: true });
   await video.saveAs(out);
   console.log(`video: ${out}`);
+  const gif = out.replace(/(\.webm)?$/, '.gif');
+  await toGif(browser, out, gif);
+  console.log(`gif: ${gif}`);
 } finally {
   await browser.close();
   server.close();

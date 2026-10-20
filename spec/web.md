@@ -53,6 +53,6 @@ for an organization, the list on the left, a selected repository's skills on
 the right, and the loading, empty and error states.
 ## Demo
 `npm run demo` records the page, with recorded answers from the JetBrains
-snapshots, into `docs/demo/skill-atlas.webm`: the filter on JetBrains/MPS, then
+snapshots, into `docs/demo/skill-atlas.webm` and a GIF of it, `skill-atlas.gif`: the filter on JetBrains/MPS, then
 the JetBrains organization, one repository at a time
 ([demo-video](../.agents/skills/demo-video/SKILL.md)).
