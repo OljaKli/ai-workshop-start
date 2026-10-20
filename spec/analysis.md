@@ -18,6 +18,7 @@ the other paths are copies.
 ## Details
 - **GitHub API**, no clone; *under 5 s* for intellij-community
 - Exact, case-sensitive `SKILL.md` files can live anywhere, including product resources
+- `GITHUB_TOKEN` authenticates discovery and file reads for accessible private or internal repositories
 - Test resources under `src/<...Test>/resources` are excluded
 - A truncated tokenless GitHub tree scans the four agent roots and
   `plugins/mcp-tools/resources`, with a warning that discovery was scoped
