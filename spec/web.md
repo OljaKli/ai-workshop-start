@@ -51,8 +51,39 @@ answers: scan, `also in`, warnings, HTML in a description shown as text, the
 `?url=` address, error messages, and the filter: matching, no matches, clearing;
 for an organization, the list on the left, a selected repository's skills on
 the right, and the loading, empty and error states.
+## Screenshots
+What the page looks like is specified by the baselines in
+[screenshots/](screenshots/): the key moments of the demo, rendered with the
+same data (the JetBrains snapshots, `tests/demo/github.ts`), viewport
+(1280×720, light, UTC, en-US) and font (Liberation Sans, bundled) on every
+run. `npm run e2e` plays the demo cases (`tests/demo/cases.ts`) in Chromium,
+records each on video, and compares each key moment *pixel by pixel*: one
+changed pixel fails it (`threshold: 0, maxDiffPixels: 0`), and a test proves so.
+
+| Baseline | The moment |
+| --- | --- |
+| [start](screenshots/start.png) | the page before a scan |
+| [filter-1-scanned](screenshots/filter-1-scanned.png) | JetBrains/MPS scanned: 75 skills, the filter above them |
+| [filter-2-description](screenshots/filter-2-description.png) | `youtrack` matches one skill by its description |
+| [filter-3-no-match](screenshots/filter-3-no-match.png) | `swift` matches nothing: the page says so |
+| [filter-4-cleared](screenshots/filter-4-cleared.png) | the filter cleared: every skill again |
+| [organization-1-list](screenshots/organization-1-list.png) | `github.com/JetBrains`: 3 repositories on the left |
+| [organization-2-koog](screenshots/organization-2-koog.png) | koog selected: its 2 skills on the right |
+| [organization-3-filtered](screenshots/organization-3-filtered.png) | MPS selected, filtered by `kotlin` |
+
+![JetBrains/koog selected in the JetBrains organization](screenshots/organization-2-koog.png)
+
+Baselines are made on **Linux, like CI** (Ubuntu 24.04, or
+`npm run e2e:linux`, the Playwright image): other systems render text
+differently. A change to the page that changes a screenshot updates its
+baseline *in the same pull request*: CI fails and lists the changed
+screenshots, its `e2e-results` artifact has the expected, actual and diff of
+each and every test's video; `npm run screenshots -- accept` takes CI's actual
+pixels for the commit as the new baselines; the reviewer compares old and new
+in the pull request's image diff and approves. On CI a missing baseline fails
+too.
 ## Demo
-`npm run demo` records the page, with recorded answers from the JetBrains
-snapshots, into `docs/demo/skill-atlas.webm` and a GIF of it, `skill-atlas.gif`: the filter on JetBrains/MPS, then
-the JetBrains organization, one repository at a time
+`npm run demo` records the same cases, with the same data and font, into
+`docs/demo/skill-atlas.webm` and a GIF of it, `skill-atlas.gif`: the filter on
+JetBrains/MPS, then the JetBrains organization, one repository at a time
 ([demo-video](../.agents/skills/demo-video/SKILL.md)).

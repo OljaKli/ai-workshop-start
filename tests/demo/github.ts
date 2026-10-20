@@ -1,10 +1,10 @@
-// GitHub, prepared in advance for the demo: the real JetBrains repositories of tests/snapshots, at
+// GitHub, prepared in advance for the demo and its screenshot tests: the real JetBrains repositories of tests/snapshots, at
 // their fixed commits, and a JetBrains organization that lists them. Offline and the same on every
 // run, so a recording never depends on the network or the rate limit.
 import { readFileSync } from 'node:fs';
-import { replay, type Recording } from '../../../src/core/replay.ts';
+import { replay, type Recording } from '../../src/core/replay.ts';
 
-const snapshots = new URL('../../../tests/snapshots/', import.meta.url);
+const snapshots = new URL('../snapshots/', import.meta.url);
 
 /** The organization's repositories: the snapshot file and GitHub's description. */
 const repositories = [
