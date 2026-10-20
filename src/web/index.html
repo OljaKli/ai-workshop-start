@@ -192,7 +192,7 @@
         skills.append(item);
       }
       for (const note of notes) warnings.append(element('li', `warning: ${note}`));
-      filter.hidden = found.length > 0;
+      filter.hidden = found.length === 0;
     }
 
     filter.addEventListener('input', applyFilter);
